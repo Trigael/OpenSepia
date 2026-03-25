@@ -2,7 +2,7 @@
 # Build and run the orchestrator container
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-MODE=${1:-dev-team}
+MODE=${1:-all}
 PAUSE=${2:-60}
 
 echo "============================================"
@@ -23,6 +23,7 @@ echo "Starting container..."
 docker run -d \
   --name opensepia \
   --restart unless-stopped \
+  -v /var/run/docker.sock:/var/run/docker.sock \
   -v "$PROJECT_DIR/board:/app/board" \
   -v "$PROJECT_DIR/workspace:/app/workspace" \
   -v "$PROJECT_DIR/logs:/app/logs" \
