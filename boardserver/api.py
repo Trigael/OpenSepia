@@ -60,6 +60,10 @@ class APIHandler(BaseHTTPRequestHandler):
     config: BoardConfig = None  # type: ignore
     events: EventProcessor = None  # type: ignore
 
+    def address_string(self):
+        """Override to skip reverse DNS lookup (causes 5-10s delay per request)."""
+        return self.client_address[0]
+
     def log_message(self, format, *args):
         """Override to use Python logging instead of stderr."""
         logger.debug("%s %s", self.client_address[0], format % args)
