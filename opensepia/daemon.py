@@ -299,7 +299,7 @@ class OrchestratorDaemon:
                 verbose=self.verbose,
             )
 
-            pipeline = build_pipeline()
+            pipeline = build_pipeline(config.agents)
 
             for step in pipeline.steps:
                 if self._stopping:

@@ -26,21 +26,49 @@ from opensepia.steps.alerting import AlertingStep
 logger = logging.getLogger(__name__)
 
 
-def build_pipeline() -> Pipeline:
-    """Construct the full orchestrator pipeline."""
-    return Pipeline(steps=[
-        BoardHealthStep(),
-        SprintCheckStep(),
-        SnapshotStep(),
-        AgentRunnerStep(),
-        SprintSyncStep(),
-        StandupSyncStep(),
-        MergeMRsStep(),
-        GitSyncStep(),
-        BoardSyncStep(),
-        CycleLogStep(),
-        AlertingStep(),
-    ])
+# Registry of all available pipeline steps
+STEP_REGISTRY = {
+    "board_health": BoardHealthStep,
+    "sprint_check": SprintCheckStep,
+    "snapshot": SnapshotStep,
+    "agent_runner": AgentRunnerStep,
+    "sprint_sync": SprintSyncStep,
+    "standup_sync": StandupSyncStep,
+    "merge_mrs": MergeMRsStep,
+    "git_sync": GitSyncStep,
+    "board_sync": BoardSyncStep,
+    "cycle_log": CycleLogStep,
+    "alerting": AlertingStep,
+}
+
+# Default step order (used when YAML doesn't specify)
+DEFAULT_PIPELINE = [
+    "board_health", "sprint_check", "snapshot", "agent_runner",
+    "sprint_sync", "standup_sync", "merge_mrs", "git_sync",
+    "board_sync", "cycle_log", "alerting",
+]
+
+
+def build_pipeline(agents_config: dict | None = None) -> Pipeline:
+    """Construct the pipeline from YAML config or defaults.
+
+    Reads the 'pipeline' key from agents.yaml to determine which steps
+    run and in what order. Unknown step names are skipped with a warning.
+    """
+    step_names = DEFAULT_PIPELINE
+
+    if agents_config and "pipeline" in agents_config:
+        step_names = agents_config["pipeline"]
+
+    steps = []
+    for name in step_names:
+        cls = STEP_REGISTRY.get(name)
+        if cls:
+            steps.append(cls())
+        else:
+            log.warn(f"Unknown pipeline step '{name}' in agents.yaml — skipping")
+
+    return Pipeline(steps=steps)
 
 
 def check_claude_cli() -> bool:
@@ -115,6 +143,7 @@ def cmd_run(argv: list[str]) -> None:
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--dry-run", action="store_true", help="Show context without calling Claude")
     parser.add_argument("--no-increment", action="store_true", help="Don't increment cycle number")
+    parser.add_argument("--project", type=str, default=None, help="Project directory path")
     args = parser.parse_args(argv)
     mode = args.mode
 
@@ -129,8 +158,9 @@ def cmd_run(argv: list[str]) -> None:
         log.warn("Claude Code CLI not in PATH")
         log.info("Install: npm install -g @anthropic-ai/claude-code")
 
+    project_dir = Path(args.project) if args.project else None
     try:
-        config = OrchestratorConfig.load()
+        config = OrchestratorConfig.load(project_dir=project_dir)
     except ConfigError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
@@ -194,7 +224,7 @@ def cmd_run(argv: list[str]) -> None:
             no_increment=args.no_increment,
         )
 
-        pipeline = build_pipeline()
+        pipeline = build_pipeline(config.agents)
         ctx = pipeline.run(ctx)
 
         if ctx.errors:

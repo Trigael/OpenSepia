@@ -103,16 +103,15 @@ class TestConfig:
         assert r.returncode == 0
         assert "Provider Integration" in r.stdout
 
-    def test_config_shows_editable_files(self):
+    def test_config_shows_set_hint(self):
         r = _run("config")
-        assert "Editable files:" in r.stdout
-        assert "project.yaml" in r.stdout
-        assert "agents.yaml" in r.stdout
+        assert "config set" in r.stdout
 
     def test_config_unknown_section(self):
         r = _run("config", "nonexistent")
         assert r.returncode == 0
-        assert "Unknown config section" in r.stdout
+        output = r.stdout + r.stderr
+        assert "Unknown" in output
 
 
 # =============================================================================

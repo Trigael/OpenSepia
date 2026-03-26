@@ -59,6 +59,7 @@ Interact:
   board                 Show current sprint board
   message <agent> text  Send a message to an agent
   config                Show editable configuration
+  config set <key> val  Change a setting from CLI
 
 Observe:
   logs [-f]             View daemon logs
