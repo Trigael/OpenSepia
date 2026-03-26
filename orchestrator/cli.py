@@ -1,21 +1,15 @@
 """
 AI Dev Team — Orchestrator CLI.
 
-Main entry point that replaces orchestrator_cli.sh.
-Builds and runs the pipeline based on the selected mode.
-
-Usage:
-    python -m orchestrator [mode] [options]          # single cycle
-    python -m orchestrator daemon start [options]     # background daemon
-    python -m orchestrator daemon stop/status/pause/resume/logs
-
-Modes:
-    all          All 9 agents
-    dev-team     6 agents (core team) [default]
-    minimal      3 agents (PO, Dev1, Tester)
-    security     3 agents (security team)
-    <agent>      Single agent (po, pm, dev1, dev2, devops, tester,
-                 sec_analyst, sec_engineer, sec_pentester)
+Entry point for all OpenSepia commands:
+  opensepia run [mode]         Run a single cycle
+  opensepia start [options]    Start background daemon
+  opensepia stop               Stop the daemon
+  opensepia status             Show daemon & project status
+  opensepia pause              Pause the daemon
+  opensepia resume             Resume the daemon
+  opensepia logs [-f]          View daemon logs
+  opensepia help               Show this help
 """
 
 import os
@@ -23,7 +17,6 @@ import sys
 import shutil
 import argparse
 import logging
-import signal
 import time
 import collections
 from datetime import datetime
@@ -45,12 +38,6 @@ from orchestrator.steps.alerting import AlertingStep
 
 logger = logging.getLogger(__name__)
 
-# Valid single-agent names
-SINGLE_AGENTS = {
-    "po", "pm", "dev1", "dev2", "devops", "tester",
-    "sec_analyst", "sec_engineer", "sec_pentester",
-}
-
 # Mode aliases
 MODE_ALIASES = {
     "dev": "dev-team",
@@ -58,40 +45,62 @@ MODE_ALIASES = {
     "sec": "security",
 }
 
+HELP_TEXT = """\
+OpenSepia — AI Dev Team
+
+Usage:
+  opensepia <command> [options]
+
+Commands:
+  run [mode]            Run a single cycle, then exit
+  start [--mode MODE]   Start the daemon (runs cycles in background)
+  stop                  Stop the running daemon
+  status                Show current status
+  pause                 Pause the daemon after current cycle
+  resume                Resume a paused daemon
+  logs [-f] [-n N]      View daemon logs
+
+Run modes:
+  dev-team              6 agents: PO, PM, Dev1, Dev2, DevOps, Tester (default)
+  minimal               3 agents: PO, Dev1, Tester
+  all                   All 9 agents
+  security              3 agents: Sec Analyst, Engineer, Pentester
+  <agent>               Single agent (po, pm, dev1, dev2, devops, tester,
+                        sec_analyst, sec_engineer, sec_pentester)
+
+Options:
+  run [mode] --dry-run       Show agent context without calling Claude
+  run [mode] --no-increment  Don't increment cycle counter
+  start --mode MODE          Daemon mode (default: dev-team)
+  start --pause SECS         Seconds between cycles (default: 60)
+  logs -f                    Follow log output (like tail -f)
+  logs -n N                  Show last N lines (default: 50)
+
+Examples:
+  opensepia start                        Start with defaults (dev-team, 60s pause)
+  opensepia start --mode minimal -p 120  Start minimal mode, 2min between cycles
+  opensepia status                       Check what's happening
+  opensepia logs -f                      Watch live logs
+  opensepia pause                        Pause after current cycle finishes
+  opensepia resume                       Resume cycling
+  opensepia stop                         Graceful shutdown
+  opensepia run po                       Run just the Product Owner agent once
+  opensepia run dev-team --dry-run       Preview without calling Claude
+"""
+
 
 def build_pipeline() -> Pipeline:
-    """Construct the full orchestrator pipeline.
-
-    Step order:
-    1. Board health check + restore if needed
-    2. Sprint check (detect end, increment cycle)
-    3. Board snapshot (before agents modify anything)
-    4. Agent runner (the main work)
-    5. Sprint sync (board -> project.yaml)
-    6. Standup sync (standup.md -> provider)
-    7. Auto-merge approved MRs
-    8. Git sync (workspace -> repo -> branch -> MR)
-    9. Board sync (board -> provider issues)
-    10. Cycle log (JSON)
-    11. Alerting (on failure)
-    """
+    """Construct the full orchestrator pipeline."""
     return Pipeline(steps=[
-        # PRE-AGENT PHASE
         BoardHealthStep(),
         SprintCheckStep(),
         SnapshotStep(),
-
-        # AGENT PHASE
         AgentRunnerStep(),
-
-        # POST-AGENT PHASE
         SprintSyncStep(),
         StandupSyncStep(),
         MergeMRsStep(),
         GitSyncStep(),
         BoardSyncStep(),
-
-        # HOUSEKEEPING
         CycleLogStep(),
         AlertingStep(),
     ])
@@ -103,76 +112,49 @@ def check_claude_cli() -> bool:
 
 
 # =============================================================================
-# Single-cycle execution (original behavior)
+# Command: run
 # =============================================================================
 
-def run_single_cycle() -> None:
-    """Run a single orchestrator cycle. Original CLI behavior."""
-    parser = argparse.ArgumentParser(
-        description="AI Dev Team — Orchestrator",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Modes:\n"
-            "  all          All 9 agents\n"
-            "  dev-team     6 agents (core team) [default]\n"
-            "  minimal      3 agents (PO, Dev1, Tester)\n"
-            "  security     3 agents (security team)\n"
-            "  <agent>      Single agent (po, pm, dev1, dev2, devops, tester,\n"
-            "               sec_analyst, sec_engineer, sec_pentester)\n"
-            "\n"
-            "Daemon:\n"
-            "  python -m orchestrator daemon start|stop|status|pause|resume|logs\n"
-        ),
-    )
-    parser.add_argument(
-        "mode", nargs="?", default="dev-team",
-        help="Execution mode or agent name (default: dev-team)",
-    )
+def cmd_run(argv: list[str]) -> None:
+    """Run a single orchestrator cycle."""
+    parser = argparse.ArgumentParser(prog="opensepia run", description="Run a single cycle")
+    parser.add_argument("mode", nargs="?", default="dev-team", help="Execution mode (default: dev-team)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument("--dry-run", action="store_true", help="Show context without calling Claude")
     parser.add_argument("--no-increment", action="store_true", help="Don't increment cycle number")
+    args = parser.parse_args(argv)
 
-    args = parser.parse_args()
-
-    # Resolve mode aliases
     mode = MODE_ALIASES.get(args.mode, args.mode)
 
-    # Setup logging
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
-
-    # Unset CLAUDECODE to prevent "nested session" errors
     os.environ.pop("CLAUDECODE", None)
 
     print()
     print("============================================")
-    print("  AI Dev Team — Orchestrator")
-    print(f"  {datetime.now()}")
+    print("  OpenSepia — Single Cycle")
+    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Mode: {mode}")
     print("============================================")
 
-    # Check Claude CLI
     if not check_claude_cli():
-        print("  WARNING: Claude Code CLI not in PATH — agents will not run")
+        print("  WARNING: Claude Code CLI not in PATH")
         print("  Install: npm install -g @anthropic-ai/claude-code")
 
-    # Load configuration
     try:
         config = OrchestratorConfig.load()
     except ConfigError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
 
-    # Resolve agent IDs for mode
     try:
         agent_ids = config.resolve_agent_ids(mode)
     except ConfigError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
 
-    # Acquire lock
     lock = ProcessLock(mode)
     try:
         lock.acquire()
@@ -181,7 +163,6 @@ def run_single_cycle() -> None:
         sys.exit(0)
 
     try:
-        # Build pipeline context
         ctx = PipelineContext(
             mode=mode,
             project_dir=config.project_dir,
@@ -199,17 +180,15 @@ def run_single_cycle() -> None:
             no_increment=args.no_increment,
         )
 
-        # Build and run pipeline
         pipeline = build_pipeline()
         ctx = pipeline.run(ctx)
 
         print()
         print("============================================")
         if ctx.errors:
-            non_critical = [str(e) for e in ctx.errors]
-            print(f"  Completed with {len(non_critical)} warning(s)")
+            print(f"  Completed with {len(ctx.errors)} warning(s)")
             if args.verbose:
-                for e in non_critical:
+                for e in ctx.errors:
                     print(f"  - {e}")
         else:
             print("  Completed successfully")
@@ -223,73 +202,21 @@ def run_single_cycle() -> None:
 
 
 # =============================================================================
-# Daemon commands
+# Command: start
 # =============================================================================
 
-def handle_daemon() -> None:
-    """Parse and dispatch daemon subcommands."""
-    parser = argparse.ArgumentParser(
-        prog="python -m orchestrator daemon",
-        description="AI Dev Team — Daemon Management",
-    )
-    sub = parser.add_subparsers(dest="action")
-
-    # start
-    start_p = sub.add_parser("start", help="Start the background daemon")
-    start_p.add_argument("--mode", "-m", default="dev-team",
-                         help="Execution mode (default: dev-team)")
-    start_p.add_argument("--pause", "-p", type=int, default=60,
-                         help="Seconds between cycles (default: 60)")
-    start_p.add_argument("--verbose", "-v", action="store_true",
-                         help="Verbose daemon logging")
-
-    # stop
-    sub.add_parser("stop", help="Stop the running daemon")
-
-    # status
-    sub.add_parser("status", help="Show daemon status")
-
-    # pause
-    sub.add_parser("pause", help="Pause the daemon (finish current cycle, then wait)")
-
-    # resume
-    sub.add_parser("resume", help="Resume a paused daemon")
-
-    # logs
-    logs_p = sub.add_parser("logs", help="View daemon logs")
-    logs_p.add_argument("--lines", "-n", type=int, default=50,
-                        help="Number of lines to show (default: 50)")
-    logs_p.add_argument("--follow", "-f", action="store_true",
-                        help="Follow log output (like tail -f)")
-
-    # Parse (skip "daemon" from sys.argv)
-    args = parser.parse_args(sys.argv[2:])
-
-    if args.action is None:
-        parser.print_help()
-        sys.exit(1)
-
-    if args.action == "start":
-        daemon_start(args)
-    elif args.action == "stop":
-        daemon_stop()
-    elif args.action == "status":
-        daemon_status()
-    elif args.action == "pause":
-        daemon_pause()
-    elif args.action == "resume":
-        daemon_resume()
-    elif args.action == "logs":
-        daemon_logs(args)
-
-
-def daemon_start(args: argparse.Namespace) -> None:
-    """Start the daemon in the background."""
+def cmd_start(argv: list[str]) -> None:
+    """Start the background daemon."""
     from orchestrator.daemon import OrchestratorDaemon
+
+    parser = argparse.ArgumentParser(prog="opensepia start", description="Start background daemon")
+    parser.add_argument("--mode", "-m", default="dev-team", help="Execution mode (default: dev-team)")
+    parser.add_argument("--pause", "-p", type=int, default=60, help="Seconds between cycles (default: 60)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Verbose daemon logging")
+    args = parser.parse_args(argv)
 
     mode = MODE_ALIASES.get(args.mode, args.mode)
 
-    # Validate mode
     try:
         config = OrchestratorConfig.load()
         config.resolve_agent_ids(mode)
@@ -300,22 +227,23 @@ def daemon_start(args: argparse.Namespace) -> None:
     print(f"Starting daemon (mode: {mode}, pause: {args.pause}s)...")
 
     try:
-        daemon = OrchestratorDaemon(
-            mode=mode,
-            pause=args.pause,
-            verbose=args.verbose,
-        )
+        daemon = OrchestratorDaemon(mode=mode, pause=args.pause, verbose=args.verbose)
         pid = daemon.start()
         print(f"Daemon started (PID: {pid})")
-        print(f"  View status:  python -m orchestrator daemon status")
-        print(f"  View logs:    python -m orchestrator daemon logs -f")
-        print(f"  Stop:         python -m orchestrator daemon stop")
+        print()
+        print(f"  opensepia status    Check status")
+        print(f"  opensepia logs -f   Follow logs")
+        print(f"  opensepia stop      Stop daemon")
     except RuntimeError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
 
 
-def daemon_stop() -> None:
+# =============================================================================
+# Command: stop
+# =============================================================================
+
+def cmd_stop(argv: list[str]) -> None:
     """Stop the running daemon."""
     from orchestrator.daemon import stop_daemon, get_daemon_status
 
@@ -326,60 +254,80 @@ def daemon_stop() -> None:
 
     print(f"Stopping daemon (PID: {state.pid})...")
     stopped = stop_daemon()
-    if stopped:
-        print("Daemon stopped.")
-    else:
-        print("Daemon was not running.")
+    print("Daemon stopped." if stopped else "Daemon was not running.")
 
 
-def daemon_status() -> None:
-    """Print formatted daemon status."""
+# =============================================================================
+# Command: status
+# =============================================================================
+
+def cmd_status(argv: list[str]) -> None:
+    """Show daemon and project status."""
     from orchestrator.daemon import get_daemon_status
 
     state = get_daemon_status()
 
-    status_display = {
-        "running": "RUNNING",
-        "paused": "PAUSED",
-        "stopping": "STOPPING",
-        "stopped": "STOPPED",
-        "crashed": "CRASHED (stale PID)",
+    status_icons = {
+        "running": "\u2022 RUNNING",
+        "paused": "\u25cb PAUSED",
+        "stopping": "~ STOPPING",
+        "stopped": "\u25cb STOPPED",
+        "crashed": "! CRASHED",
     }
 
+    # Load project info if available
+    sprint_info = ""
+    try:
+        config = OrchestratorConfig.load()
+        sprint_info = f"Sprint {config.sprint_num}, Cycle {config.cycle_num}"
+    except Exception:
+        pass
+
     print()
-    print(f"  Status:        {status_display.get(state.status, state.status.upper())}")
-    print(f"  PID:           {state.pid or '-'}")
-    print(f"  Mode:          {state.mode}")
-    print(f"  Pause:         {state.pause_seconds}s between cycles")
+    print(f"  Daemon:   {status_icons.get(state.status, state.status.upper())}")
 
-    if state.started_at:
-        print(f"  Started:       {state.started_at}")
-    print(f"  Cycles:        {state.cycle_count}")
+    if state.is_process_alive():
+        print(f"  PID:      {state.pid}")
+        print(f"  Mode:     {state.mode}")
+        print(f"  Interval: every {state.pause_seconds}s")
 
-    if state.current_step:
-        print(f"  Current Step:  {state.current_step}")
-        if state.current_cycle_started_at:
-            print(f"    Started at:  {state.current_cycle_started_at}")
+        if state.started_at:
+            started = state.started_at[:19].replace("T", " ")
+            print(f"  Started:  {started}")
 
-    if state.last_cycle_finished_at:
-        result_icon = {"ok": "+", "error": "!", "skipped": "~", "crash": "X"}.get(
-            state.last_cycle_result or "", "?"
-        )
-        print(f"  Last Cycle:    [{result_icon}] {state.last_cycle_result} at {state.last_cycle_finished_at}")
+        print(f"  Cycles:   {state.cycle_count}")
+
+        if state.current_step:
+            print(f"  Doing:    {state.current_step}")
+
+        if state.last_cycle_result:
+            icon = {"ok": "+", "error": "!", "skipped": "~"}.get(state.last_cycle_result, "?")
+            finished = (state.last_cycle_finished_at or "")[:19].replace("T", " ")
+            print(f"  Last:     [{icon}] {state.last_cycle_result} ({finished})")
+
         if state.last_cycle_errors:
             for err in state.last_cycle_errors[:3]:
-                print(f"    - {err[:100]}")
+                print(f"            - {err[:80]}")
 
-    if state.next_cycle_at:
-        print(f"  Next Cycle:    {state.next_cycle_at}")
+        if state.next_cycle_at:
+            next_at = state.next_cycle_at[:19].replace("T", " ")
+            print(f"  Next:     {next_at}")
 
-    if state.paused_at:
-        print(f"  Paused since:  {state.paused_at}")
+        if state.paused_at:
+            paused = state.paused_at[:19].replace("T", " ")
+            print(f"  Paused:   since {paused}")
+
+    if sprint_info:
+        print(f"  Project:  {sprint_info}")
 
     print()
 
 
-def daemon_pause() -> None:
+# =============================================================================
+# Command: pause / resume
+# =============================================================================
+
+def cmd_pause(argv: list[str]) -> None:
     """Pause the running daemon."""
     from orchestrator.daemon import send_pause_signal, get_daemon_status
 
@@ -392,13 +340,13 @@ def daemon_pause() -> None:
         return
 
     try:
-        new_status = send_pause_signal()
-        print(f"Daemon paused (status: {new_status})")
+        send_pause_signal()
+        print("Daemon paused. Run 'opensepia resume' to continue.")
     except RuntimeError as e:
         print(f"ERROR: {e}")
 
 
-def daemon_resume() -> None:
+def cmd_resume(argv: list[str]) -> None:
     """Resume a paused daemon."""
     from orchestrator.daemon import send_pause_signal, get_daemon_status
 
@@ -411,19 +359,29 @@ def daemon_resume() -> None:
         return
 
     try:
-        new_status = send_pause_signal()
-        print(f"Daemon resumed (status: {new_status})")
+        send_pause_signal()
+        print("Daemon resumed.")
     except RuntimeError as e:
         print(f"ERROR: {e}")
 
 
-def daemon_logs(args: argparse.Namespace) -> None:
+# =============================================================================
+# Command: logs
+# =============================================================================
+
+def cmd_logs(argv: list[str]) -> None:
     """View daemon log file."""
+    parser = argparse.ArgumentParser(prog="opensepia logs", description="View daemon logs")
+    parser.add_argument("--lines", "-n", type=int, default=50, help="Number of lines (default: 50)")
+    parser.add_argument("--follow", "-f", action="store_true", help="Follow log output")
+    args = parser.parse_args(argv)
+
     project_dir = Path(__file__).parent.parent
     log_path = project_dir / "logs" / "daemon.log"
 
     if not log_path.exists():
-        print("No daemon log file found. Has the daemon been started?")
+        print("No daemon log file yet. Start the daemon first:")
+        print("  opensepia start")
         return
 
     if args.follow:
@@ -433,7 +391,6 @@ def daemon_logs(args: argparse.Namespace) -> None:
 
 
 def _tail_lines(path: Path, n: int) -> None:
-    """Print last N lines of a file."""
     with open(path, "r", encoding="utf-8", errors="replace") as f:
         lines = collections.deque(f, maxlen=n)
     for line in lines:
@@ -441,13 +398,11 @@ def _tail_lines(path: Path, n: int) -> None:
 
 
 def _tail_follow(path: Path, n: int) -> None:
-    """Print last N lines, then follow new output."""
     _tail_lines(path, n)
     print("--- following (Ctrl+C to stop) ---")
-
     try:
         with open(path, "r", encoding="utf-8", errors="replace") as f:
-            f.seek(0, 2)  # Seek to end
+            f.seek(0, 2)
             while True:
                 line = f.readline()
                 if line:
@@ -459,12 +414,66 @@ def _tail_follow(path: Path, n: int) -> None:
 
 
 # =============================================================================
-# Main entry point
+# Command router
 # =============================================================================
 
-def main() -> None:
-    """Route to single-cycle or daemon mode."""
-    if len(sys.argv) > 1 and sys.argv[1] == "daemon":
-        handle_daemon()
+COMMANDS = {
+    "run": cmd_run,
+    "start": cmd_start,
+    "stop": cmd_stop,
+    "status": cmd_status,
+    "pause": cmd_pause,
+    "resume": cmd_resume,
+    "logs": cmd_logs,
+    # Legacy: "daemon" subcommand still works
+    "daemon": None,
+}
+
+
+def _handle_legacy_daemon(argv: list[str]) -> None:
+    """Handle 'opensepia daemon <action>' by mapping to top-level commands."""
+    if not argv:
+        print(HELP_TEXT)
+        return
+    action = argv[0]
+    rest = argv[1:]
+    handler = COMMANDS.get(action)
+    if handler:
+        handler(rest)
     else:
-        run_single_cycle()
+        print(f"Unknown daemon action: {action}")
+        print(HELP_TEXT)
+        sys.exit(1)
+
+
+def main() -> None:
+    """Main entry point — route to the appropriate command."""
+    if len(sys.argv) < 2 or sys.argv[1] in ("help", "--help", "-h"):
+        print(HELP_TEXT)
+        return
+
+    command = sys.argv[1]
+    rest = sys.argv[2:]
+
+    # Legacy: "daemon" subcommand maps actions to top-level commands
+    if command == "daemon":
+        _handle_legacy_daemon(rest)
+        return
+
+    handler = COMMANDS.get(command)
+    if handler:
+        handler(rest)
+        return
+
+    # If the argument looks like a mode name, treat as "run <mode>"
+    all_modes = {"all", "dev-team", "dev", "minimal", "min", "security", "sec",
+                 "po", "pm", "dev1", "dev2", "devops", "tester",
+                 "sec_analyst", "sec_engineer", "sec_pentester"}
+    if command in all_modes:
+        cmd_run([command] + rest)
+        return
+
+    print(f"Unknown command: {command}")
+    print()
+    print(HELP_TEXT)
+    sys.exit(1)
