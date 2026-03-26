@@ -56,10 +56,12 @@ class CycleState:
             return cls()
         try:
             data = json.loads(state_path.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                return cls()
             known = {f.name for f in cls.__dataclass_fields__.values()}
             filtered = {k: v for k, v in data.items() if k in known}
             return cls(**filtered)
-        except (json.JSONDecodeError, TypeError) as e:
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
             logger.warning("Corrupt cycle state, starting fresh: %s", e)
             return cls()
 
