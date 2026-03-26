@@ -299,32 +299,15 @@ class OrchestratorDaemon:
                 verbose=self.verbose,
             )
 
-            pipeline = build_pipeline(config.agents)
+            # Check for interrupted cycle
+            from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
+            cs_path = config.project_dir / CYCLE_STATE_FILE
+            resume_state = CycleState.load(cs_path)
+            if not resume_state.is_interrupted:
+                resume_state = None
 
-            for step in pipeline.steps:
-                if self._stopping:
-                    break
-                self._check_control_file()
-                if self._stopping:
-                    break
-                self._update_state(current_step=step.name)
-                try:
-                    ctx = step.execute(ctx)
-                except OrchestratorError as e:
-                    ctx.errors.append(e)
-                    if step.critical:
-                        logger.error("Critical step '%s' failed: %s", step.name, e)
-                        break
-                    else:
-                        logger.warning("Step '%s' failed: %s", step.name, e)
-                except Exception as e:
-                    wrapped = OrchestratorError(f"Unexpected error in {step.name}: {e}")
-                    ctx.errors.append(wrapped)
-                    if step.critical:
-                        logger.error("Critical step '%s' crashed: %s", step.name, e)
-                        break
-                    else:
-                        logger.warning("Step '%s' crashed: %s", step.name, e)
+            pipeline = build_pipeline(config.agents)
+            ctx = pipeline.run(ctx, resume_state=resume_state)
 
             errors = [str(e) for e in ctx.errors]
             return ("error" if errors else "ok"), errors

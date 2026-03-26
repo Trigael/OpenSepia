@@ -224,8 +224,19 @@ def cmd_run(argv: list[str]) -> None:
             no_increment=args.no_increment,
         )
 
+        # Check for interrupted cycle
+        from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
+        state_path = config.project_dir / CYCLE_STATE_FILE
+        resume_state = CycleState.load(state_path)
+
+        if resume_state.is_interrupted:
+            log.warn(f"Resuming interrupted cycle {resume_state.cycle_id}")
+            log.detail(f"Completed: {', '.join(resume_state.completed_steps)}")
+        else:
+            resume_state = None
+
         pipeline = build_pipeline(config.agents)
-        ctx = pipeline.run(ctx)
+        ctx = pipeline.run(ctx, resume_state=resume_state)
 
         if ctx.errors:
             log.banner([f"Completed with {len(ctx.errors)} warning(s)"])
