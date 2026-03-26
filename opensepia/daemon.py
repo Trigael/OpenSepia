@@ -282,6 +282,11 @@ class OrchestratorDaemon:
             return "skipped", [str(e)]
 
         try:
+            from opensepia.board_adapter import create_board_adapter
+            board_adapter = create_board_adapter(
+                config.board_dir, config.workspace_dir, config.project_dir,
+            )
+
             ctx = PipelineContext(
                 mode=self.mode,
                 tool_dir=config.tool_dir,
@@ -297,6 +302,7 @@ class OrchestratorDaemon:
                 agent_ids=agent_ids,
                 execution_params=config.get_execution_params(),
                 verbose=self.verbose,
+                board_adapter=board_adapter,
             )
 
             # Check for interrupted cycle

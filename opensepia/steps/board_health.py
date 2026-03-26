@@ -24,6 +24,20 @@ class BoardHealthStep:
     def execute(self, ctx: PipelineContext) -> PipelineContext:
         board_dir = ctx.board_dir
 
+        # Use adapter if available
+        if ctx.board_adapter:
+            health = ctx.board_adapter.check_board_health()
+            unhealthy = [k for k, v in health.items() if not v]
+            if unhealthy:
+                log.warn(f"Board health issues: {', '.join(unhealthy)}")
+                self._try_restore(ctx, board_dir)
+            else:
+                log.step_detail("board_health", "All board files present")
+
+            ctx.board_adapter.ensure_board_ready()
+            return ctx
+
+        # Fallback: direct file checks
         missing = []
         for fname in CRITICAL_FILES:
             fpath = board_dir / fname
@@ -85,6 +99,13 @@ class SnapshotStep:
         if ctx.dry_run:
             return ctx
 
+        # Use adapter if available
+        if ctx.board_adapter:
+            count = ctx.board_adapter.create_snapshot()
+            log.step_detail("snapshot", f"Saved {count} files to .snapshot/")
+            return ctx
+
+        # Fallback: direct file copy
         board_dir = ctx.board_dir
         snapshot_dir = board_dir / ".snapshot"
         snapshot_dir.mkdir(parents=True, exist_ok=True)

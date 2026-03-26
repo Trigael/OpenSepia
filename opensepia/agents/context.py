@@ -7,105 +7,57 @@ workspace tree, inbox, provider comments, and communication rules.
 
 import logging
 from datetime import datetime
-from pathlib import Path
 from typing import Any
-
-from opensepia.agents.workspace import get_workspace_tree
-from opensepia.agents.writer import read_file_safe
-from opensepia.config import MAX_STANDUP_CHARS, MAX_INBOX_CHARS
 
 logger = logging.getLogger(__name__)
 
-MAX_COMMENT_CONTEXT_CHARS = 6000
 
-
-def build_agent_context(
+def build_agent_context_from_adapter(
     agent_id: str,
     agents_config: dict[str, Any],
-    project_config: dict[str, Any],
-    board_dir: Path,
-    workspace_dir: Path,
+    agent_context: "AgentContext",
 ) -> str:
-    """Build complete context for an agent.
+    """Build the prompt string from a pre-loaded AgentContext.
 
-    Token-efficient version — truncates large sections to stay within
-    reasonable prompt sizes for Claude Pro/Max plans.
-
-    Args:
-        agent_id: Agent identifier (e.g., "dev1", "po").
-        agents_config: Full agents.yaml config.
-        project_config: Full project.yaml config.
-        board_dir: Path to board/ directory.
-        workspace_dir: Path to workspace/ directory.
-        base_dir: Project root directory.
-
-    Returns:
-        Complete prompt string ready to send to Claude CLI.
+    Uses the same template as build_agent_context() but gets data from
+    the adapter's AgentContext dataclass instead of reading files directly.
     """
+    from opensepia.board_adapter import AgentContext as _AC  # noqa: avoid circular
+
     agent = agents_config["agents"][agent_id]
-    sprint_cfg = project_config.get("sprint", {})
-
-    # Load board files
-    project_md = read_file_safe(board_dir / "project.md")
-    sprint_md = read_file_safe(board_dir / "sprint.md")
-    backlog_md = read_file_safe(board_dir / "backlog.md")
-
-    # Load standup (current cycle only — cut off nested <details>)
-    standup_file = board_dir / "standup.md"
-    standup_content = read_file_safe(standup_file)
-    details_pos = standup_content.find("<details>")
-    if details_pos > 0:
-        standup_content = standup_content[:details_pos].strip()
-    if len(standup_content) > MAX_STANDUP_CHARS:
-        standup_content = standup_content[:MAX_STANDUP_CHARS] + "\n_(truncated)_"
-
-    # Load this agent's inbox
-    inbox_path = board_dir / "inbox" / f"{agent_id}.md"
-    inbox_content = read_file_safe(inbox_path)
-
-    # Workspace tree (truncated)
-    workspace_tree = get_workspace_tree(workspace_dir)
-
-    # Metadata
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
-    cycle = sprint_cfg.get("current_cycle", 0)
-    sprint_num = sprint_cfg.get("current_sprint", 1)
 
-    # System prompt
     system_prompt = agent["system_prompt"]
-
-    # Provider comments (READ path)
-    provider_section = _fetch_provider_comments(board_dir)
-
-    # Communication rules
     comm_rules = agents_config["global"].get("communication_rules", "")
+
+    ac = agent_context
 
     context = f"""{system_prompt}
 
 ---
 # CURRENT STATE
 
-Time: {now} | Sprint: {sprint_num} | Cycle: {cycle}
+Time: {now} | Sprint: {ac.sprint_num} | Cycle: {ac.cycle_num}
 
 ## Project
-{project_md[:2000] if project_md else "(empty)"}
+{ac.project_description if ac.project_description else "(empty)"}
 
 ## Sprint (COMPLETE)
-{sprint_md if sprint_md else "(none)"}
+{ac.sprint_md if ac.sprint_md else "(none)"}
 
 ## Backlog (truncated)
-{backlog_md[:4000] if backlog_md else "(empty)"}
+{ac.backlog_md if ac.backlog_md else "(empty)"}
 
 ## Standup (current cycle)
-{standup_content if standup_content.strip() else "(empty so far)"}
+{ac.standup if ac.standup.strip() else "(empty so far)"}
 
 ## Your Inbox ({agent_id})
-{inbox_content if inbox_content else "(no messages)"}
-{provider_section}
+{ac.inbox if ac.inbox else "(no messages)"}
+{ac.provider_comments}
 
 ## Workspace
 ```
-{workspace_tree}
+{ac.workspace_tree}
 ```
 
 ---
@@ -140,29 +92,3 @@ Rules:
 """
 
     return context
-
-
-def _fetch_provider_comments(board_dir: Path) -> str:
-    """Fetch recent provider comments for active stories.
-
-    Returns formatted Markdown section or empty string on failure.
-    """
-    try:
-        from opensepia.integrations.providers import detect_provider
-        from opensepia.board.comments import get_active_story_ids, fetch_comments_for_context
-
-        provider = detect_provider()
-        if provider and provider.enabled:
-            active_ids = get_active_story_ids(
-                board_dir / "sprint.md",
-                board_dir / "backlog.md",
-            )
-            comments_md = fetch_comments_for_context(
-                active_ids, provider, max_chars=MAX_COMMENT_CONTEXT_CHARS,
-            )
-            if comments_md:
-                return f"\n## Issue Discussions (from {provider.name})\n{comments_md}"
-    except Exception as e:
-        logger.debug("Provider comments unavailable: %s", e)
-
-    return ""

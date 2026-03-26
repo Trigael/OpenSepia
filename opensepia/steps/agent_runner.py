@@ -1,8 +1,8 @@
 """
 AI Dev Team — Agent runner step.
 
-Runs all agents in sequence, building context, invoking Claude CLI,
-parsing output, and applying changes. Handles retry logic.
+Runs all agents in sequence via the board adapter.
+Builds context, invokes Claude CLI, parses output, applies changes.
 """
 
 import time
@@ -13,47 +13,13 @@ from typing import Any
 
 from opensepia import log
 from opensepia.pipeline import PipelineContext
-from opensepia.agents.context import build_agent_context
+from opensepia.agents.context import build_agent_context_from_adapter
 from opensepia.agents.invoker import invoke_agent
-from opensepia.config import DEFAULT_EXECUTION, MAX_STANDUP_CHARS, MAX_INBOX_CHARS
-from opensepia.agents.writer import (
-    apply_output, read_file_safe, write_file, archive_inbox,
-)
+from opensepia.agents.parser import parse_files_section
+from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
+from opensepia.config import DEFAULT_EXECUTION
 
 logger = logging.getLogger(__name__)
-
-
-def initialize_standup_file(board_dir: Path, sprint_num: int, cycle: int) -> None:
-    """Initialize standup file for a new cycle.
-
-    Archives old standup and keeps last cycle as context,
-    removing nested <details> blocks to prevent accumulation.
-    """
-    standup_file = board_dir / "standup.md"
-    old_content = read_file_safe(standup_file)
-
-    if old_content.strip():
-        archive_dir = board_dir / "archive" / "standup"
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        write_file(archive_dir / f"s{sprint_num}_c{cycle - 1}_{timestamp}.md", old_content)
-
-        # Keep last cycle as context — without nested <details>
-        details_pos = old_content.find("<details>")
-        if details_pos > 0:
-            clean_content = old_content[:details_pos].strip()
-        else:
-            clean_content = old_content.strip()
-
-        if len(clean_content) > MAX_INBOX_CHARS:
-            clean_content = clean_content[:MAX_INBOX_CHARS] + "\n_(truncated)_"
-
-        prev_section = f"\n\n<details><summary>Previous cycle</summary>\n\n{clean_content}\n</details>\n"
-    else:
-        prev_section = ""
-
-    header = f"# Standup — Sprint {sprint_num}, Cycle {cycle}\n"
-    write_file(standup_file, header + prev_section + "\n")
 
 
 class AgentRunnerStep:
@@ -67,8 +33,10 @@ class AgentRunnerStep:
             logger.info("Skipping agents (sprint ended or dry-run)")
             return ctx
 
+        adapter = ctx.board_adapter
+
         if ctx.dry_run:
-            self._dry_run(ctx)
+            self._dry_run(ctx, adapter)
             return ctx
 
         # Initialize standup (only if not resuming mid-agent)
@@ -77,7 +45,7 @@ class AgentRunnerStep:
             already_completed = set(ctx.cycle_state.completed_agents)
             log.info(f"Resuming agents — {len(already_completed)} already done, {len(ctx.agent_ids) - len(already_completed)} remaining")
         else:
-            initialize_standup_file(ctx.board_dir, ctx.sprint_num, ctx.cycle_num)
+            adapter.init_standup(ctx.sprint_num, ctx.cycle_num)
 
         standup_file = ctx.board_dir / "standup.md"
         state_path = ctx.project_dir / "logs" / "cycle_state.json" if ctx.cycle_state else None
@@ -108,7 +76,7 @@ class AgentRunnerStep:
             start_time = time.time()
             result_dict = self._run_single_agent(
                 aid, agent_name, agent_color,
-                ctx, standup_file,
+                ctx, adapter, standup_file,
             )
             elapsed = time.time() - start_time
             results.append(result_dict)
@@ -156,10 +124,10 @@ class AgentRunnerStep:
         agent_name: str,
         agent_color: str,
         ctx: PipelineContext,
+        adapter,
         standup_file: Path,
     ) -> dict[str, Any]:
         """Run a single agent with retry logic."""
-        # Get execution params (global merged with per-agent overrides)
         exec_cfg = ctx.agents_config.get("execution", {})
         params = {
             "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
@@ -178,10 +146,9 @@ class AgentRunnerStep:
 
         for attempt in range(1 + max_retries):
             try:
-                context = build_agent_context(
-                    agent_id, ctx.agents_config, ctx.project_config,
-                    ctx.board_dir, ctx.workspace_dir,
-                )
+                # Build context through adapter
+                agent_ctx = adapter.get_agent_context(agent_id, ctx.agents_config, ctx.project_config)
+                context = build_agent_context_from_adapter(agent_id, ctx.agents_config, agent_ctx)
 
                 agent_result = invoke_agent(
                     agent_id=agent_id,
@@ -204,24 +171,30 @@ class AgentRunnerStep:
                 if agent_result.error or "ERROR" in agent_result.response:
                     error_msg = agent_result.error or agent_result.response[:100]
                     if attempt < max_retries:
-                        log.warn(f"{error_msg} — retrying in {retry_delay}s...")
+                        log.agent_retry(retry_delay)
                         time.sleep(retry_delay)
                         continue
                     else:
                         log.error(f"{error_msg} (after {attempt + 1} attempts)")
                         result_dict["error"] = error_msg
-                        self._archive_inbox_on_error(agent_id, ctx.board_dir)
+                        adapter.archive_inbox(agent_id)
                         return result_dict
                 else:
                     if attempt > 0:
                         log.info(f"Retry successful (attempt {attempt + 1})")
 
-                    files_written = apply_output(
-                        agent_id, result_dict, ctx.agents_config,
-                        ctx.project_dir, ctx.board_dir, standup_file,
-                        verbose=ctx.verbose,
-                    )
+                    # Apply output through adapter
+                    parsed = parse_files_section(result_dict["response"])
+                    files_written = adapter.apply_agent_output(agent_id, parsed, ctx.agents_config)
                     result_dict["files_written"] = files_written
+
+                    # Handle standup fallback and provider comments
+                    _handle_standup_fallback(agent_id, result_dict, parsed, ctx.agents_config, standup_file)
+                    _handle_provider_comments(agent_id, parsed)
+
+                    # Archive inbox
+                    adapter.archive_inbox(agent_id)
+
                     return result_dict
 
             except Exception as e:
@@ -231,7 +204,7 @@ class AgentRunnerStep:
                 else:
                     log.error(f"Error: {e} (after {attempt + 1} attempts)")
                     logger.exception("Error for %s", agent_id)
-                    self._archive_inbox_on_error(agent_id, ctx.board_dir)
+                    adapter.archive_inbox(agent_id)
                     return {
                         "agent_id": agent_id,
                         "agent_name": agent_name,
@@ -242,7 +215,6 @@ class AgentRunnerStep:
                         "error": str(e),
                     }
 
-        # Should not reach here, but safety fallback
         return {
             "agent_id": agent_id,
             "agent_name": agent_name,
@@ -253,20 +225,10 @@ class AgentRunnerStep:
             "error": "max retries exhausted",
         }
 
-    def _archive_inbox_on_error(self, agent_id: str, board_dir: Path) -> None:
-        """Archive inbox even when agent fails."""
-        inbox_path = board_dir / "inbox" / f"{agent_id}.md"
-        inbox_content = read_file_safe(inbox_path)
-        if inbox_content.strip():
-            archive_inbox(agent_id, inbox_content, board_dir)
-            write_file(inbox_path, "")
-
-    def _dry_run(self, ctx: PipelineContext) -> None:
+    def _dry_run(self, ctx: PipelineContext, adapter) -> None:
         """Print context for each agent without calling Claude."""
         for aid in ctx.agent_ids:
-            context = build_agent_context(
-                aid, ctx.agents_config, ctx.project_config,
-                ctx.board_dir, ctx.workspace_dir,
-            )
-            log.step("agent_runner", f"--- {aid} ({len(context)} chars) ---")
-            log.info(context[:1500] + "..." if len(context) > 1500 else context)
+            agent_ctx = adapter.get_agent_context(aid, ctx.agents_config, ctx.project_config)
+            context = build_agent_context_from_adapter(aid, ctx.agents_config, agent_ctx)
+            log.info(f"--- {aid} ({len(context)} chars) ---")
+            print(context[:1500] + "..." if len(context) > 1500 else context)

@@ -205,6 +205,12 @@ def cmd_run(argv: list[str]) -> None:
         sys.exit(0)
 
     try:
+        # Create board adapter (auto-selects based on BOARD_SERVER_URL)
+        from opensepia.board_adapter import create_board_adapter
+        board_adapter = create_board_adapter(
+            config.board_dir, config.workspace_dir, config.project_dir,
+        )
+
         ctx = PipelineContext(
             mode=mode,
             tool_dir=config.tool_dir,
@@ -222,6 +228,7 @@ def cmd_run(argv: list[str]) -> None:
             verbose=args.verbose,
             dry_run=args.dry_run,
             no_increment=args.no_increment,
+            board_adapter=board_adapter,
         )
 
         # Check for interrupted cycle

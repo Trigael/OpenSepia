@@ -135,16 +135,19 @@ def cmd_status(argv: list[str]) -> None:
         log.info(f"Sprint:    {config.sprint_num}, Cycle {config.cycle_num}")
 
         # Board summary — count stories by status
-        sprint_path = config.board_dir / "sprint.md"
-        if sprint_path.exists():
-            import re
-            content = sprint_path.read_text(encoding="utf-8")
-            todo = len(re.findall(r'- \[ \]', content))
-            done = len(re.findall(r'- \[x\]', content, re.IGNORECASE))
-            in_progress = len(re.findall(r'IN.PROGRESS', content, re.IGNORECASE))
-            review = len(re.findall(r'REVIEW', content, re.IGNORECASE))
-            if todo or done or in_progress:
-                log.info(f"Stories:   {done} done, {in_progress} in progress, {review} review, {todo} todo")
+        try:
+            from opensepia.board_adapter import create_board_adapter
+            adapter = create_board_adapter(config.board_dir, config.workspace_dir, config.project_dir)
+            summary = adapter.get_board_summary()
+            if summary:
+                done = summary.get("done", 0)
+                in_progress = summary.get("in_progress", 0)
+                review = summary.get("review", 0)
+                todo = summary.get("todo", 0)
+                if todo or done or in_progress:
+                    log.info(f"Stories:   {done} done, {in_progress} in progress, {review} review, {todo} todo")
+        except Exception:
+            pass
 
         # Last cycle from log files
         if not state.is_process_alive():

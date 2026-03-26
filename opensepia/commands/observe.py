@@ -66,15 +66,19 @@ def _show_standup(tool_dir: Path) -> None:
     """Show the current standup file."""
     try:
         config = OrchestratorConfig.load()
-        standup_path = config.board_dir / "standup.md"
+        from opensepia.board_adapter import create_board_adapter
+        adapter = create_board_adapter(config.board_dir, config.workspace_dir, config.project_dir)
+        content = adapter.get_standup_text()
     except ConfigError:
         standup_path = tool_dir / "project" / "board" / "standup.md"
+        if not standup_path.exists():
+            log.info("No standup yet.")
+            return
+        content = standup_path.read_text(encoding="utf-8")
 
-    if not standup_path.exists():
+    if not content.strip():
         log.info("No standup yet.")
         return
-
-    content = standup_path.read_text(encoding="utf-8")
 
     # Find the agent reports — they come after the header and any <details> blocks
     # Strip HTML tags for display

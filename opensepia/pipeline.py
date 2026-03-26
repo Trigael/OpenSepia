@@ -13,6 +13,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from opensepia.errors import OrchestratorError
 from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
+from opensepia.board_adapter import BoardAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ class PipelineContext:
     verbose: bool = False
     dry_run: bool = False
     no_increment: bool = False
+
+    # Board adapter (set by caller — required for agent execution)
+    board_adapter: BoardAdapter | None = None  # None only in tests that don't run agents
 
     # Cycle state for checkpointing (set by Pipeline.run)
     cycle_state: CycleState | None = None
