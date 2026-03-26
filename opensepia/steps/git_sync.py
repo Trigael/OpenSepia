@@ -17,6 +17,7 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.errors import GitSyncError
 
@@ -55,7 +56,7 @@ class GitSyncStep:
         branch_name = self._compute_branch_name(ctx)
         timestamp = datetime.now().isoformat()
 
-        print(f"  Git sync: workspace -> branch {branch_name}")
+        log.step("git_sync", f"Workspace -> branch {branch_name}")
 
         try:
             self._commit_and_push(ctx, workspace, auth_url, branch_name, timestamp)
@@ -63,7 +64,7 @@ class GitSyncStep:
             raise
         except Exception as e:
             logger.warning("Git sync error: %s", e)
-            print(f"  Git sync failed (non-critical): {e}")
+            log.warn(f"Git sync failed (non-critical): {e}")
 
         return ctx
 
@@ -124,7 +125,7 @@ class GitSyncStep:
         # Check for changes
         diff_result = run_git("diff", "--cached", "--quiet", check=False)
         if diff_result.returncode == 0:
-            print("  Git: no changes to commit")
+            log.step_detail("git_sync", "No changes to commit")
             run_git("checkout", "main", check=False)
             run_git("branch", "-D", branch_name, check=False)
             return
@@ -160,7 +161,7 @@ class GitSyncStep:
             sanitized = re.sub(r"oauth2:[^@]*@", "oauth2:***@", push_result.stderr)
             logger.warning("Git push warning: %s", sanitized)
 
-        print(f"  Git: pushed branch {branch_name}")
+        log.step("git_sync", f"Pushed branch {branch_name}")
 
         # Create MR
         self._create_mr(ctx, branch_name, code_changes)
@@ -175,7 +176,7 @@ class GitSyncStep:
         project = os.environ.get("GITLAB_PROJECT_ID", "")
 
         if not all([url, token, project]):
-            print("  MR: missing configuration, skipping")
+            log.step_detail("git_sync", "MR: missing configuration, skipping")
             return
 
         encoded_project = urllib.parse.quote(project, safe="")
@@ -188,10 +189,10 @@ class GitSyncStep:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 existing = json.loads(resp.read())
             if existing:
-                print(f"  MR !{existing[0]['iid']} already exists — OK")
+                log.step_detail("git_sync", f"MR !{existing[0]['iid']} already exists — OK")
                 return
         except Exception as e:
-            print(f"  MR: error checking: {e}")
+            log.warn(f"MR: error checking: {e}")
             return
 
         # Create new MR
@@ -219,9 +220,9 @@ class GitSyncStep:
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 mr = json.loads(resp.read())
-                print(f"  MR !{mr['iid']} created: {mr['web_url']}")
+                log.step("git_sync", f"MR !{mr['iid']} created: {mr['web_url']}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"  MR error {e.code}: {body[:200]}")
+            log.error(f"MR error {e.code}: {body[:200]}")
         except Exception as e:
-            print(f"  MR error: {e}")
+            log.error(f"MR error: {e}")

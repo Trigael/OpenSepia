@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ class AlertingStep:
         failed_str = ", ".join(failed)
         now = datetime.now()
         alert_msg = f"[AI Dev Team ALERT] Failed agents: {failed_str} ({now}, mode: {ctx.mode})"
-        print(f"  ALERT: {alert_msg}")
+        log.warn(alert_msg)
 
         # Write to local log
         logs_dir = ctx.project_dir / "logs"
@@ -54,7 +55,7 @@ class AlertingStep:
 
             client = detect_provider()
             if not client or not client.enabled:
-                print("  Provider not configured, local log only")
+                log.step_detail("alerting", "Provider not configured, local log only")
                 return
 
             title = f"[Alert] Agent failure: {failed_str} ({now.strftime('%Y-%m-%d %H:%M')})"
@@ -68,9 +69,9 @@ class AlertingStep:
             )
             result = client.create_issue(title, body, labels=["alert", "bug"])
             if isinstance(result, dict) and "iid" in result:
-                print(f"  Alert issue #{result['iid']} created on provider")
+                log.step("alerting", f"Alert issue #{result['iid']} created on provider")
             else:
-                print(f"  Alert issue creation returned: {result}")
+                log.step_detail("alerting", f"Alert issue creation returned: {result}")
         except Exception as e:
             logger.warning("Provider alert failed: %s", e)
-            print(f"  Provider alert failed (non-critical): {e}")
+            log.warn(f"Provider alert failed (non-critical): {e}")

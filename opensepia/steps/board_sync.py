@@ -6,6 +6,7 @@ Syncs board/backlog.md and board/sprint.md to provider issues.
 
 import logging
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ class BoardSyncStep:
         if ctx.dry_run:
             return ctx
 
-        print("  Board sync...")
+        log.step("board_sync", "Board sync...")
 
         try:
             from opensepia.integrations.providers import detect_provider
@@ -29,7 +30,7 @@ class BoardSyncStep:
 
             provider = detect_provider()
             if not provider or not provider.enabled:
-                print("  Board sync: no provider configured, skipping")
+                log.step_detail("board_sync", "No provider configured, skipping")
                 return ctx
 
             backlog_path = ctx.board_dir / "backlog.md"
@@ -45,10 +46,10 @@ class BoardSyncStep:
                 sprint_statuses = parse_sprint_statuses(sprint_path)
 
             created, updated = sync_to_provider(items, sprint_statuses, provider, ctx.board_dir)
-            print(f"  Board sync: {created} created, {updated} updated")
+            log.step("board_sync", f"{created} created, {updated} updated")
 
         except Exception as e:
             logger.warning("Board sync failed: %s", e)
-            print(f"  Board sync failed (non-critical): {e}")
+            log.warn(f"Board sync failed (non-critical): {e}")
 
         return ctx

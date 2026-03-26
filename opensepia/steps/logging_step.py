@@ -10,6 +10,7 @@ import json
 import logging
 from datetime import datetime
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,6 @@ class CycleLogStep:
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(log_entry, f, indent=2, ensure_ascii=False)
 
-        print(f"  Cycle log: {fname}")
+        log.step_detail("cycle_log", f"Wrote {fname}")
 
         return ctx

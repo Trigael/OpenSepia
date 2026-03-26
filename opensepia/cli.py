@@ -22,6 +22,7 @@ import collections
 from datetime import datetime
 from pathlib import Path
 
+from opensepia import log
 from opensepia.config import OrchestratorConfig
 from opensepia.errors import OrchestratorError, ConfigError, LockError
 from opensepia.lockfile import ProcessLock
@@ -182,15 +183,16 @@ def cmd_run(argv: list[str]) -> None:
     args = parser.parse_args(argv)
     mode = args.mode
 
+    log.set_verbose(args.verbose)
     logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        level=logging.DEBUG if args.verbose else logging.CRITICAL,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     os.environ.pop("CLAUDECODE", None)
 
     if not check_claude_cli():
-        print("  WARNING: Claude Code CLI not in PATH")
-        print("  Install: npm install -g @anthropic-ai/claude-code")
+        log.warn("Claude Code CLI not in PATH")
+        log.info("Install: npm install -g @anthropic-ai/claude-code")
 
     try:
         config = OrchestratorConfig.load()
@@ -219,18 +221,17 @@ def cmd_run(argv: list[str]) -> None:
     else:
         git_label = " (no git)"
 
-    print()
-    print("============================================")
-    print("  OpenSepia — Single Cycle")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Mode: {mode} ({len(agent_ids)} agents{git_label})")
-    print("============================================")
+    log.banner([
+        "OpenSepia — Single Cycle",
+        f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Mode: {mode} ({len(agent_ids)} agents{git_label})",
+    ])
 
     lock = ProcessLock(mode)
     try:
         lock.acquire()
     except LockError as e:
-        print(f"  {e}")
+        log.warn(str(e))
         sys.exit(0)
 
     try:
@@ -256,19 +257,15 @@ def cmd_run(argv: list[str]) -> None:
         pipeline = build_pipeline()
         ctx = pipeline.run(ctx)
 
-        print()
-        print("============================================")
         if ctx.errors:
-            print(f"  Completed with {len(ctx.errors)} warning(s)")
-            if args.verbose:
-                for e in ctx.errors:
-                    print(f"  - {e}")
+            log.banner([f"Completed with {len(ctx.errors)} warning(s)"])
+            for e in ctx.errors:
+                log.detail(f"  - {e}")
         else:
-            print("  Completed successfully")
-        print("============================================")
+            log.banner(["Completed successfully"])
 
     except OrchestratorError as e:
-        print(f"\nFATAL: {e}")
+        log.error(f"FATAL: {e}")
         sys.exit(1)
     finally:
         lock.release()
