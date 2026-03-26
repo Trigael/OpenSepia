@@ -7,6 +7,7 @@ Posts standup.md content to provider issues.
 import logging
 from pathlib import Path
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.errors import ProviderError
 
@@ -23,7 +24,7 @@ class StandupSyncStep:
         if ctx.dry_run:
             return ctx
 
-        print("  Standup -> provider sync...")
+        log.step("standup_sync", "Standup -> provider sync...")
 
         try:
             from opensepia.integrations.providers import detect_provider
@@ -33,12 +34,12 @@ class StandupSyncStep:
             if client and client.enabled:
                 standup_path = ctx.board_dir / "standup.md"
                 posted = post_standup_to_provider(standup_path, client)
-                print(f"  Standup: {posted} comments posted to provider")
+                log.step("standup_sync", f"{posted} comments posted to provider")
             else:
-                print("  Standup: provider not configured, skipping")
+                log.step_detail("standup_sync", "Provider not configured, skipping")
 
         except Exception as e:
             logger.warning("Standup provider sync failed: %s", e)
-            print(f"  Standup sync failed (non-critical): {e}")
+            log.warn(f"Standup sync failed (non-critical): {e}")
 
         return ctx

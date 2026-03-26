@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.agents.context import build_agent_context
 from opensepia.agents.invoker import invoke_agent
@@ -78,10 +79,9 @@ class AgentRunnerStep:
 
         standup_file = ctx.board_dir / "standup.md"
 
-        print(f"\n\U0001f916 AI Dev Team — Cycle {ctx.cycle_num}")
-        print(f"   Mode: {ctx.mode}")
-        print(f"   Agents: {', '.join(ctx.agent_ids)}")
-        print(f"{'─' * 50}")
+        log.info(f"AI Dev Team — Cycle {ctx.cycle_num}")
+        log.detail(f"Mode: {ctx.mode}")
+        log.detail(f"Agents: {', '.join(ctx.agent_ids)}")
 
         results: list[dict[str, Any]] = []
         global_params = ctx.execution_params or {}
@@ -95,13 +95,21 @@ class AgentRunnerStep:
             agent_name = agent_cfg["name"]
             agent_color = agent_cfg["color"]
 
-            print(f"\n{agent_color} [{i + 1}/{len(ctx.agent_ids)}] {agent_name}...")
+            log.progress(agent_name, i + 1, len(ctx.agent_ids), agent_color)
 
+            start_time = time.time()
             result_dict = self._run_single_agent(
                 aid, agent_name, agent_color,
                 ctx, standup_file,
             )
+            elapsed = time.time() - start_time
             results.append(result_dict)
+
+            if result_dict.get("error"):
+                log.agent_error(agent_name, result_dict["error"])
+            else:
+                files_written = result_dict.get("files_written", 0)
+                log.agent_done(agent_name, files_written, elapsed)
 
             # Pause between agents (skip after last agent)
             if pause_between > 0 and i < len(ctx.agent_ids) - 1:
@@ -113,12 +121,16 @@ class AgentRunnerStep:
         # Print summary
         ok_count = sum(1 for r in results if not r.get("error"))
         err_count = sum(1 for r in results if r.get("error"))
-        print(f"\n{'─' * 50}")
-        print(f"\u2705 Cycle {ctx.cycle_num} agents completed")
-        print(f"   Successful: {ok_count}/{len(ctx.agent_ids)}")
+        # Cycle summary
+        total_files = sum(r.get("files_written", 0) for r in results)
+        total_ctx = sum(r.get("context_size", 0) for r in results)
+        total_resp = sum(r.get("response_size", 0) for r in results)
+
+        log.success(f"Cycle {ctx.cycle_num} — {ok_count}/{len(ctx.agent_ids)} agents, {total_files} files written")
         if err_count:
             failed = [r["agent_name"] for r in results if r.get("error")]
-            print(f"   \u274c Failed: {', '.join(failed)}")
+            log.error(f"Failed: {', '.join(failed)}")
+        log.detail(f"Context: {total_ctx:,} chars, Response: {total_resp:,} chars")
 
         return ctx
 
@@ -176,32 +188,32 @@ class AgentRunnerStep:
                 if agent_result.error or "ERROR" in agent_result.response:
                     error_msg = agent_result.error or agent_result.response[:100]
                     if attempt < max_retries:
-                        print(f"   \u26a0\ufe0f  {error_msg} — retrying in {retry_delay}s...")
+                        log.warn(f"{error_msg} — retrying in {retry_delay}s...")
                         time.sleep(retry_delay)
                         continue
                     else:
-                        print(f"   \u274c {error_msg} (after {attempt + 1} attempts)")
+                        log.error(f"{error_msg} (after {attempt + 1} attempts)")
                         result_dict["error"] = error_msg
                         self._archive_inbox_on_error(agent_id, ctx.board_dir)
                         return result_dict
                 else:
                     if attempt > 0:
-                        print(f"   \U0001f504 Retry successful (attempt {attempt + 1})")
+                        log.info(f"Retry successful (attempt {attempt + 1})")
 
                     files_written = apply_output(
                         agent_id, result_dict, ctx.agents_config,
                         ctx.project_dir, ctx.board_dir, standup_file,
                         verbose=ctx.verbose,
                     )
-                    print(f"   \u2705 Done — {files_written} files")
+                    result_dict["files_written"] = files_written
                     return result_dict
 
             except Exception as e:
                 if attempt < max_retries:
-                    print(f"   \u26a0\ufe0f  Error: {e} — retrying in {retry_delay}s...")
+                    log.warn(f"Error: {e} — retrying in {retry_delay}s...")
                     time.sleep(retry_delay)
                 else:
-                    print(f"   \u274c Error: {e} (after {attempt + 1} attempts)")
+                    log.error(f"Error: {e} (after {attempt + 1} attempts)")
                     logger.exception("Error for %s", agent_id)
                     self._archive_inbox_on_error(agent_id, ctx.board_dir)
                     return {
@@ -240,5 +252,5 @@ class AgentRunnerStep:
                 aid, ctx.agents_config, ctx.project_config,
                 ctx.board_dir, ctx.workspace_dir,
             )
-            print(f"\n--- {aid} ({len(context)} chars) ---")
-            print(context[:1500] + "..." if len(context) > 1500 else context)
+            log.step("agent_runner", f"--- {aid} ({len(context)} chars) ---")
+            log.info(context[:1500] + "..." if len(context) > 1500 else context)

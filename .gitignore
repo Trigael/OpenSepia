@@ -26,36 +26,9 @@ project/board/standup.md
 project/board/inbox/
 project/logs/
 
-# Workspace generated code
-project/workspace/src/*
-project/workspace/tests/*
-project/workspace/docs/*
-project/workspace/config/*
-!project/workspace/src/.gitkeep
-!project/workspace/tests/.gitkeep
-!project/workspace/docs/.gitkeep
-!project/workspace/config/.gitkeep
-
-# Generated project files in workspace
-project/workspace/Dockerfile*
-project/workspace/docker-compose*.yml
-project/workspace/Makefile
-project/workspace/README.md
-project/workspace/CONTRIBUTING.md
-project/workspace/requirements.txt
-project/workspace/pytest.ini
-project/workspace/.coverage
-project/workspace/.env*
-project/workspace/.github/
-project/workspace/frontend/
-project/workspace/monitoring/
-
-# Local repo clone
-repo/
-
-# Archives
-*.tar.gz
-*.zip
+# Workspace — the product's git repo (agents write here)
+# The entire workspace is managed by agents + git, not tracked by OpenSepia
+project/workspace/
 
 # IDE
 .vscode/
@@ -67,6 +40,10 @@ repo/
 # OS
 .DS_Store
 Thumbs.db
+
+# Archives
+*.tar.gz
+*.zip
 
 # Pytest
 .pytest_cache/

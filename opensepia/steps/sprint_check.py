@@ -11,6 +11,7 @@ import yaml
 from pathlib import Path
 from typing import Any
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class SprintCheckStep:
 
         if cycle >= max_cycles:
             logger.info("Sprint completed (cycle %d/%d). Running retrospective.", cycle, max_cycles)
-            print(f"  Sprint completed. Running PO and PM for retrospective.")
+            log.step("sprint_check", "Sprint completed. Running PO and PM for retrospective.")
 
             self._run_retrospective(ctx)
             self._advance_sprint(ctx)
@@ -45,8 +46,7 @@ class SprintCheckStep:
             else:
                 ctx.cycle_num = cycle
 
-            if ctx.verbose:
-                print(f"  Sprint status: {ctx.cycle_num}/{max_cycles}")
+            log.step_detail("sprint_check", f"Sprint status: {ctx.cycle_num}/{max_cycles}")
 
         return ctx
 
@@ -101,7 +101,7 @@ class SprintCheckStep:
         ctx.cycle_num = 0
         self._save_project(ctx)
 
-        print(f"  Sprint {old_sprint} -> {new_sprint}, cycle reset to 0")
+        log.step("sprint_check", f"Sprint {old_sprint} -> {new_sprint}, cycle reset to 0")
 
     def _save_project(self, ctx: PipelineContext) -> None:
         """Write project.yaml to disk."""
@@ -133,9 +133,9 @@ class SprintSyncStep:
             sprint_cfg["current_sprint"] = board_sprint
             if board_sprint > yaml_sprint:
                 sprint_cfg["current_cycle"] = 1
-                print(f"   Sprint sync: {yaml_sprint} -> {board_sprint} (cycle reset to 1)")
+                log.step("sprint_sync", f"Sprint sync: {yaml_sprint} -> {board_sprint} (cycle reset to 1)")
             else:
-                print(f"   Sprint sync: {yaml_sprint} -> {board_sprint}")
+                log.step("sprint_sync", f"Sprint sync: {yaml_sprint} -> {board_sprint}")
 
             ctx.project_config["sprint"] = sprint_cfg
             ctx.sprint_num = board_sprint

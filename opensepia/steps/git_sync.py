@@ -1,14 +1,14 @@
 """
 AI Dev Team — Git sync step.
 
-Syncs workspace/src to a feature branch in the git repo and creates
-a merge request via the provider API.
+Commits workspace changes to a feature branch and creates a merge request.
+The workspace (project/workspace/) is itself the git repo — no separate
+repo/ folder or copy step needed.
 """
 
 import os
 import re
 import json
-import shutil
 import subprocess
 import logging
 import urllib.request
@@ -17,37 +17,15 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 
+from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.errors import GitSyncError
 
 logger = logging.getLogger(__name__)
 
-SYNC_EXCLUDE = {".git", "node_modules", "__pycache__", ".venv", "venv", ".claude"}
-
-
-def _sync_directory(src: Path, dest: Path) -> None:
-    """Mirror src directory to dest (cross-platform replacement for rsync --delete)."""
-    # Remove dest files not in src
-    if dest.exists():
-        for item in dest.rglob("*"):
-            if item.is_dir():
-                continue
-            rel = item.relative_to(dest)
-            if any(part in SYNC_EXCLUDE for part in rel.parts):
-                continue
-            if not (src / rel).exists():
-                item.unlink()
-
-    # Copy src to dest
-    def _ignore(directory: str, contents: list[str]) -> set[str]:
-        return {c for c in contents if c in SYNC_EXCLUDE}
-
-    if src.exists():
-        shutil.copytree(src, dest, ignore=_ignore, dirs_exist_ok=True)
-
 
 class GitSyncStep:
-    """Sync workspace -> repo -> feature branch -> MR."""
+    """Commit workspace changes, push feature branch, create MR."""
 
     name = "git_sync"
     critical = False
@@ -56,28 +34,37 @@ class GitSyncStep:
         if ctx.dry_run:
             return ctx
 
+        workspace = ctx.workspace_dir
+        git_dir = workspace / ".git"
+
+        if not workspace.exists():
+            return ctx
+
+        if not git_dir.exists():
+            # Not an error — git is optional. Only log at debug level.
+            logger.debug("Git sync skipped (workspace is not a git repo)")
+            return ctx
+
         repo_url = os.environ.get("GIT_REPO_URL", "")
-        repo_path = Path(os.environ.get("GIT_REPO_PATH", str(ctx.tool_dir / "repo")))
         git_token = os.environ.get("GIT_TOKEN", "")
 
-        if not repo_url or not (repo_path / ".git").exists():
-            print("  Git sync skipped (repo not configured or doesn't exist)")
+        if not repo_url:
+            logger.debug("Git sync skipped (GIT_REPO_URL not set)")
             return ctx
 
         auth_url = re.sub(r"https://", f"https://oauth2:{git_token}@", repo_url)
-
         branch_name = self._compute_branch_name(ctx)
         timestamp = datetime.now().isoformat()
 
-        print(f"  Git sync: workspace/src -> branch {branch_name}")
+        log.step("git_sync", f"Workspace -> branch {branch_name}")
 
         try:
-            self._sync_to_branch(ctx, repo_path, auth_url, branch_name, timestamp)
+            self._commit_and_push(ctx, workspace, auth_url, branch_name, timestamp)
         except GitSyncError:
             raise
         except Exception as e:
             logger.warning("Git sync error: %s", e)
-            print(f"  Git sync failed (non-critical): {e}")
+            log.warn(f"Git sync failed (non-critical): {e}")
 
         return ctx
 
@@ -103,60 +90,52 @@ class GitSyncStep:
             return f"ai-team/{story_slug}-s{ctx.sprint_num}c{ctx.cycle_num}"
         return f"ai-team/sprint-{ctx.sprint_num}-cycle-{ctx.cycle_num}"
 
-    def _sync_to_branch(
+    def _commit_and_push(
         self,
         ctx: PipelineContext,
-        repo_path: Path,
+        workspace: Path,
         auth_url: str,
         branch_name: str,
         timestamp: str,
     ) -> None:
-        """Execute git operations: fetch, branch, rsync, commit, push."""
+        """Commit workspace changes, push branch, create MR."""
 
         def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
-            # Sanitize output to prevent token leakage
             result = subprocess.run(
                 ["git"] + list(args),
                 capture_output=True,
                 text=True,
-                cwd=str(repo_path),
+                cwd=str(workspace),
                 timeout=60,
             )
             if check and result.returncode != 0:
-                # Sanitize error output
                 sanitized = re.sub(r"oauth2:[^@]*@", "oauth2:***@", result.stderr)
                 raise GitSyncError(f"git {args[0]} failed: {sanitized}")
             return result
 
-        # Fetch and reset to main
-        run_git("fetch", auth_url, "main")
+        # Fetch latest main and create feature branch from it
+        run_git("fetch", auth_url, "main", check=False)
         run_git("checkout", "main", check=False)
         run_git("reset", "--hard", "FETCH_HEAD", check=False)
-
-        # Create/switch to feature branch
         run_git("checkout", "-b", branch_name, check=False)
 
-        # Sync workspace/src -> repo/src (cross-platform, replaces rsync)
-        src_dir = ctx.workspace_dir / "src"
-        dest_dir = repo_path / "src"
-        if src_dir.exists():
-            _sync_directory(src_dir, dest_dir)
+        # Stage all code changes (src/, tests/, docs/, config/)
+        run_git("add", "-A")
 
-        # Stage and check for changes
-        run_git("add", "src/")
-
+        # Check for changes
         diff_result = run_git("diff", "--cached", "--quiet", check=False)
         if diff_result.returncode == 0:
-            print("  Git: no changes to commit")
+            log.step_detail("git_sync", "No changes to commit")
             run_git("checkout", "main", check=False)
             run_git("branch", "-D", branch_name, check=False)
             return
 
         # Get changed files for commit message
-        changes_result = run_git("diff", "--cached", "--name-only", "--", "src/", check=False)
-        code_changes = "\n".join(changes_result.stdout.strip().split("\n")[:5])
+        changes_result = run_git("diff", "--cached", "--name-only", check=False)
+        changed_files = changes_result.stdout.strip().split("\n")[:10]
+        code_changes = "\n".join(changed_files)
 
-        # Build story slug for commit message
+        # Build commit message with agent co-authors
         story_slug = branch_name.split("/", 1)[1] if "/" in branch_name else ""
 
         if story_slug and not story_slug.startswith("sprint-"):
@@ -166,23 +145,36 @@ class GitSyncStep:
 
         commit_msg += f"\n\nAutomatic commit after AI Dev Team run.\nMode: {ctx.mode} | Time: {timestamp}"
         if code_changes:
-            commit_msg += f"\n\nChanged files (code):\n{code_changes}"
+            commit_msg += f"\n\nChanged files:\n{code_changes}"
 
-        run_git("commit", "-m", commit_msg)
+        # Add agent co-author trailers
+        agents_cfg = ctx.agents_config.get("agents", {})
+        for aid in ctx.agent_ids:
+            agent_def = agents_cfg.get(aid, {})
+            name = agent_def.get("name", aid)
+            commit_msg += f"\nCo-authored-by: {name} <{aid}@opensepia.ai>"
+
+        # Commit as the lead agent (first in the list)
+        lead_id = ctx.agent_ids[0] if ctx.agent_ids else "opensepia"
+        lead_def = agents_cfg.get(lead_id, {})
+        lead_name = lead_def.get("name", "OpenSepia")
+        author = f"{lead_name} <{lead_id}@opensepia.ai>"
+
+        run_git("commit", "-m", commit_msg, f"--author={author}")
 
         # Push feature branch
         push_result = subprocess.run(
             ["git", "push", auth_url, branch_name, "--force"],
             capture_output=True,
             text=True,
-            cwd=str(repo_path),
+            cwd=str(workspace),
             timeout=120,
         )
         if push_result.returncode != 0:
             sanitized = re.sub(r"oauth2:[^@]*@", "oauth2:***@", push_result.stderr)
             logger.warning("Git push warning: %s", sanitized)
 
-        print(f"  Git: pushed branch {branch_name}")
+        log.step("git_sync", f"Pushed branch {branch_name}")
 
         # Create MR
         self._create_mr(ctx, branch_name, code_changes)
@@ -197,7 +189,7 @@ class GitSyncStep:
         project = os.environ.get("GITLAB_PROJECT_ID", "")
 
         if not all([url, token, project]):
-            print("  MR: missing configuration, skipping")
+            log.step_detail("git_sync", "MR: missing configuration, skipping")
             return
 
         encoded_project = urllib.parse.quote(project, safe="")
@@ -210,10 +202,10 @@ class GitSyncStep:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 existing = json.loads(resp.read())
             if existing:
-                print(f"  MR !{existing[0]['iid']} already exists — OK")
+                log.step_detail("git_sync", f"MR !{existing[0]['iid']} already exists — OK")
                 return
         except Exception as e:
-            print(f"  MR: error checking: {e}")
+            log.warn(f"MR: error checking: {e}")
             return
 
         # Create new MR
@@ -241,9 +233,9 @@ class GitSyncStep:
         try:
             with urllib.request.urlopen(req, timeout=15) as resp:
                 mr = json.loads(resp.read())
-                print(f"  MR !{mr['iid']} created: {mr['web_url']}")
+                log.step("git_sync", f"MR !{mr['iid']} created: {mr['web_url']}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"  MR error {e.code}: {body[:200]}")
+            log.error(f"MR error {e.code}: {body[:200]}")
         except Exception as e:
-            print(f"  MR error: {e}")
+            log.error(f"MR error: {e}")

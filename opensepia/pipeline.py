@@ -82,9 +82,10 @@ class Pipeline:
         Raises:
             OrchestratorError: If a critical step fails.
         """
+        from opensepia import log
         for step in self.steps:
             try:
-                logger.debug("Running step: %s", step.name)
+                log.step_detail("pipeline", f"Running step: {step.name}")
                 ctx = step.execute(ctx)
             except OrchestratorError as e:
                 ctx.errors.append(e)
