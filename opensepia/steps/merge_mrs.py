@@ -23,7 +23,7 @@ class MergeMRsStep:
 
         try:
             from opensepia.integrations.providers import detect_provider
-            from scripts.merge_approved_mrs import merge_approved_mrs
+            from opensepia.board.merge import merge_approved_mrs
 
             client = detect_provider()
             if not client or not client.enabled:

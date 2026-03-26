@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 AI Dev Team — Auto-merge approved MRs + cleanup of stale branches.
 
@@ -7,25 +6,19 @@ After completing an agent cycle:
 2. Closes stale MRs (older than 2 days without approvals)
 """
 
-import sys
-import os
+import logging
 from datetime import datetime, timezone, timedelta
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from typing import Any
 
 from opensepia.integrations.base import BoardProvider
-from opensepia.integrations.providers import detect_provider
-from opensepia.integrations.logging_config import setup_logging
 
-logger = setup_logging("merge_approved_mrs")
+logger = logging.getLogger(__name__)
 
-# MRs older than this many days without approvals will be closed
 STALE_DAYS = 2
 
 
-def _parse_gitlab_date(date_str: str) -> datetime:
-    """Parse a GitLab ISO 8601 date."""
-    # GitLab returns format: 2025-01-15T10:30:00.000Z or 2025-01-15T10:30:00.000+00:00
+def _parse_provider_date(date_str: str) -> datetime:
+    """Parse an ISO 8601 date from a provider."""
     date_str = date_str.replace("Z", "+00:00")
     try:
         return datetime.fromisoformat(date_str)
@@ -35,13 +28,11 @@ def _parse_gitlab_date(date_str: str) -> datetime:
 
 def _is_our_branch(mr: dict) -> bool:
     """Filter only ai-team/ branches (our MRs, not manual ones)."""
-    source = mr.get("source_branch", "")
-    return source.startswith("ai-team/")
+    return mr.get("source_branch", "").startswith("ai-team/")
 
 
 def _parse_cycle_number(branch_name: str) -> int:
     """Extract cycle number from branch name (ai-team/sprint-X-cycle-Y -> Y)."""
-    # Format: ai-team/sprint-3-cycle-10
     try:
         return int(branch_name.rsplit("-", 1)[-1])
     except (ValueError, IndexError):
@@ -49,8 +40,7 @@ def _parse_cycle_number(branch_name: str) -> int:
 
 
 def merge_approved_mrs(client: BoardProvider) -> tuple[int, int]:
-    """
-    Merge approved MRs and close stale ones.
+    """Merge approved MRs and close stale ones.
 
     Strategy: the newest cycle gets merged, older ones are closed as superseded
     (each cycle contains the complete workspace state, so the newest = the most complete).
@@ -67,13 +57,11 @@ def merge_approved_mrs(client: BoardProvider) -> tuple[int, int]:
         logger.info("No open MRs")
         return 0, 0
 
-    # Filter only our ai-team/ branches
     our_mrs = [mr for mr in mrs if _is_our_branch(mr)]
     if not our_mrs:
         logger.info("No ai-team/ MRs to process")
         return 0, 0
 
-    # Sort by cycle number — newest first
     our_mrs.sort(key=lambda m: _parse_cycle_number(m.get("source_branch", "")), reverse=True)
 
     merged = 0
@@ -86,99 +74,61 @@ def merge_approved_mrs(client: BoardProvider) -> tuple[int, int]:
         title = mr.get("title", "?")
         branch = mr.get("source_branch", "?")
 
-        # Get MR details
         detail = client.get_mr(iid)
         if "error" in detail:
-            logger.warning(f"MR !{iid}: cannot get details — {detail}")
+            logger.warning("MR !%s: cannot get details — %s", iid, detail)
             continue
 
         merge_status = detail.get("detailed_merge_status", detail.get("merge_status", ""))
-        created_at = _parse_gitlab_date(detail.get("created_at", ""))
+        created_at = _parse_provider_date(detail.get("created_at", ""))
         age = now - created_at
 
-        # Approvals: use provider's get_mr_approvals method
         approvals = client.get_mr_approvals(iid)
         is_approved = approvals.get("approved", False)
-
         can_merge = merge_status in ("can_be_merged", "mergeable")
 
-        # --- Newest MR: merge if approved ---
         if not newest_merged and can_merge and is_approved:
-            logger.info(f"MR !{iid} '{title}' ({branch}) — merging (newest, approved)")
+            logger.info("MR !%s '%s' (%s) — merging (newest, approved)", iid, title, branch)
             result = client.merge_mr(iid, squash=False)
             if "error" not in result:
                 merged += 1
                 newest_merged = True
-                logger.info(f"MR !{iid} successfully merged")
             else:
-                logger.warning(f"MR !{iid} merge failed: {result}")
+                logger.warning("MR !%s merge failed: %s", iid, result)
             continue
 
-        # --- Older MR after successful merge of newest: close as superseded ---
         if newest_merged:
-            logger.info(f"MR !{iid} '{title}' ({branch}) — closing (superseded by newer cycle)")
-            client.comment_mr(
-                iid,
+            logger.info("MR !%s '%s' (%s) — closing (superseded)", iid, title, branch)
+            client.comment_on_mr(iid,
                 "Automatically closed — a newer cycle was merged, this MR is superseded.",
-                agent_id="orchestrator",
-            )
+                agent_id="orchestrator")
             result = client.close_mr(iid)
             if "error" not in result:
                 closed += 1
-                logger.info(f"MR !{iid} closed")
-            else:
-                logger.warning(f"MR !{iid} close failed: {result}")
             continue
 
-        # --- Conflict cleanup: approved MR with conflicts — close ---
-        # Next cycle will create a new MR from clean main
         if not can_merge and is_approved:
-            logger.info(f"MR !{iid} '{title}' ({branch}) — closing (approved but {merge_status}, next cycle will create a new one)")
-            client.comment_mr(
-                iid,
-                f"Automatically closed — MR has conflicts ({merge_status}). Next cycle will create a new MR from current main.",
-                agent_id="orchestrator",
-            )
+            logger.info("MR !%s '%s' (%s) — closing (conflicts)", iid, title, branch)
+            client.comment_on_mr(iid,
+                f"Automatically closed — MR has conflicts ({merge_status}). "
+                "Next cycle will create a new MR from current main.",
+                agent_id="orchestrator")
             result = client.close_mr(iid)
             if "error" not in result:
                 closed += 1
-                logger.info(f"MR !{iid} closed")
-            else:
-                logger.warning(f"MR !{iid} close failed: {result}")
             continue
 
-        # --- Stale MR cleanup ---
         if age > timedelta(days=STALE_DAYS) and not is_approved:
-            logger.info(f"MR !{iid} '{title}' — closing (stale: {age.days}d, no approvals)")
-            client.comment_mr(
-                iid,
+            logger.info("MR !%s '%s' — closing (stale: %dd)", iid, title, age.days)
+            client.comment_on_mr(iid,
                 f"Automatically closed — MR is older than {STALE_DAYS} days without approvals.",
-                agent_id="orchestrator",
-            )
+                agent_id="orchestrator")
             result = client.close_mr(iid)
             if "error" not in result:
                 closed += 1
-                logger.info(f"MR !{iid} closed")
-            else:
-                logger.warning(f"MR !{iid} close failed: {result}")
             continue
 
-        logger.info(
-            f"MR !{iid} '{title}' — skipped "
-            f"(merge_status={merge_status}, approved={is_approved}, age={age.days}d)"
-        )
+        logger.info("MR !%s '%s' — skipped (status=%s, approved=%s, age=%dd)",
+                     iid, title, merge_status, is_approved, age.days)
 
     return merged, closed
-
-
-if __name__ == "__main__":
-    from opensepia.integrations.logging_config import load_env
-    load_env()
-
-    client = detect_provider()
-    if not client or not client.enabled:
-        print("No provider configured (GitLab or GitHub)")
-        sys.exit(1)
-
-    merged, closed = merge_approved_mrs(client)
-    print(f"Done: {merged} MRs merged, {closed} MRs closed")
