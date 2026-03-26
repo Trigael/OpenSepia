@@ -235,6 +235,7 @@ class OrchestratorDaemon:
                 sprint_num=config.sprint_num,
                 cycle_num=config.cycle_num,
                 agent_ids=agent_ids,
+                execution_params=config.get_execution_params(),
                 verbose=self.verbose,
             )
 

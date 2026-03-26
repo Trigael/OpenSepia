@@ -38,13 +38,6 @@ from orchestrator.steps.alerting import AlertingStep
 
 logger = logging.getLogger(__name__)
 
-# Mode aliases
-MODE_ALIASES = {
-    "dev": "dev-team",
-    "min": "minimal",
-    "sec": "security",
-}
-
 HELP_TEXT = """\
 OpenSepia — AI Dev Team
 
@@ -123,21 +116,13 @@ def cmd_run(argv: list[str]) -> None:
     parser.add_argument("--dry-run", action="store_true", help="Show context without calling Claude")
     parser.add_argument("--no-increment", action="store_true", help="Don't increment cycle number")
     args = parser.parse_args(argv)
-
-    mode = MODE_ALIASES.get(args.mode, args.mode)
+    mode = args.mode
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
     os.environ.pop("CLAUDECODE", None)
-
-    print()
-    print("============================================")
-    print("  OpenSepia — Single Cycle")
-    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Mode: {mode}")
-    print("============================================")
 
     if not check_claude_cli():
         print("  WARNING: Claude Code CLI not in PATH")
@@ -154,6 +139,13 @@ def cmd_run(argv: list[str]) -> None:
     except ConfigError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
+
+    print()
+    print("============================================")
+    print("  OpenSepia — Single Cycle")
+    print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  Mode: {mode} ({len(agent_ids)} agents)")
+    print("============================================")
 
     lock = ProcessLock(mode)
     try:
@@ -175,6 +167,7 @@ def cmd_run(argv: list[str]) -> None:
             sprint_num=config.sprint_num,
             cycle_num=config.cycle_num,
             agent_ids=agent_ids,
+            execution_params=config.get_execution_params(),
             verbose=args.verbose,
             dry_run=args.dry_run,
             no_increment=args.no_increment,
@@ -215,7 +208,7 @@ def cmd_start(argv: list[str]) -> None:
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose daemon logging")
     args = parser.parse_args(argv)
 
-    mode = MODE_ALIASES.get(args.mode, args.mode)
+    mode = args.mode
 
     try:
         config = OrchestratorConfig.load()
@@ -466,9 +459,11 @@ def main() -> None:
         return
 
     # If the argument looks like a mode name, treat as "run <mode>"
-    all_modes = {"all", "dev-team", "dev", "minimal", "min", "security", "sec",
-                 "po", "pm", "dev1", "dev2", "devops", "tester",
-                 "sec_analyst", "sec_engineer", "sec_pentester"}
+    try:
+        config = OrchestratorConfig.load()
+        all_modes = config.get_all_mode_names()
+    except ConfigError:
+        all_modes = set()
     if command in all_modes:
         cmd_run([command] + rest)
         return

@@ -13,7 +13,8 @@ from typing import Any
 
 from orchestrator.pipeline import PipelineContext
 from agent.context import build_agent_context
-from agent.invoker import invoke_agent, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY
+from agent.invoker import invoke_agent
+from orchestrator.config import DEFAULT_EXECUTION
 from agent.writer import (
     apply_output, read_file_safe, write_file, archive_inbox,
 )
@@ -83,6 +84,11 @@ class AgentRunnerStep:
         print(f"{'─' * 50}")
 
         results: list[dict[str, Any]] = []
+        global_params = ctx.execution_params or {}
+        pause_between = global_params.get(
+            "pause_between_agents",
+            DEFAULT_EXECUTION["pause_between_agents"],
+        )
 
         for i, aid in enumerate(ctx.agent_ids):
             agent_cfg = ctx.agents_config["agents"][aid]
@@ -96,6 +102,10 @@ class AgentRunnerStep:
                 ctx, standup_file,
             )
             results.append(result_dict)
+
+            # Pause between agents (skip after last agent)
+            if pause_between > 0 and i < len(ctx.agent_ids) - 1:
+                time.sleep(pause_between)
 
         ctx.agent_results = results
         ctx.agents_ok = all(not r.get("error") for r in results)
@@ -121,8 +131,22 @@ class AgentRunnerStep:
         standup_file: Path,
     ) -> dict[str, Any]:
         """Run a single agent with retry logic."""
-        max_retries = DEFAULT_MAX_RETRIES
-        retry_delay = DEFAULT_RETRY_DELAY
+        # Get execution params (global merged with per-agent overrides)
+        exec_cfg = ctx.agents_config.get("execution", {})
+        params = {
+            "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
+            "max_retries": exec_cfg.get("max_retries", DEFAULT_EXECUTION["max_retries"]),
+            "retry_delay": exec_cfg.get("retry_delay", DEFAULT_EXECUTION["retry_delay"]),
+        }
+        overrides = exec_cfg.get("overrides", {})
+        if isinstance(overrides, dict) and agent_id in overrides:
+            agent_ov = overrides[agent_id]
+            if isinstance(agent_ov, dict):
+                params.update(agent_ov)
+
+        max_retries = params["max_retries"]
+        retry_delay = params["retry_delay"]
+        timeout = params["timeout"]
 
         for attempt in range(1 + max_retries):
             try:
@@ -136,6 +160,7 @@ class AgentRunnerStep:
                     context=context,
                     base_dir=ctx.project_dir,
                     agent_name=f"{agent_color} {agent_name}",
+                    timeout=timeout,
                     verbose=ctx.verbose,
                 )
 

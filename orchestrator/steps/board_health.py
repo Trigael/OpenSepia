@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 
 CRITICAL_FILES = ["sprint.md", "backlog.md"]
 SNAPSHOT_FILES = ["sprint.md", "backlog.md", "project.md", "architecture.md", "decisions.md"]
-ALL_AGENTS = ["po", "pm", "dev1", "dev2", "devops", "tester",
-              "sec_analyst", "sec_engineer", "sec_pentester"]
 
 
 class BoardHealthStep:
@@ -56,7 +54,8 @@ class BoardHealthStep:
         # Ensure inbox directory and files exist
         inbox_dir = board_dir / "inbox"
         inbox_dir.mkdir(parents=True, exist_ok=True)
-        for agent in ALL_AGENTS:
+        all_agents = list(ctx.agents_config.get("agents", {}).keys())
+        for agent in all_agents:
             inbox_file = inbox_dir / f"{agent}.md"
             if not inbox_file.exists():
                 inbox_file.touch()

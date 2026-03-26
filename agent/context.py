@@ -138,7 +138,7 @@ Rules:
 - Each file starts with "path:" and "content:"
 - To append to the end use "action: append"
 - Only write relevant files
-- Inbox files: po.md, pm.md, dev1.md, dev2.md, devops.md, tester.md, sec_analyst.md, sec_engineer.md, sec_pentester.md
+- Inbox files: {', '.join(f'{aid}.md' for aid in agents_config['agents'].keys())}
 - NEVER use dev.md, qa.md, security.md — these files do not exist!
 """
 

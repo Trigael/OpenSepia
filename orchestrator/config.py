@@ -2,6 +2,7 @@
 AI Dev Team — Centralized configuration loading.
 
 Loads agents.yaml, project.yaml, and .env in one place.
+All mode resolution and execution parameters are driven by YAML.
 """
 
 import yaml
@@ -10,6 +11,14 @@ from pathlib import Path
 from typing import Any
 
 from orchestrator.errors import ConfigError
+
+# Default execution parameters (used when YAML doesn't specify)
+DEFAULT_EXECUTION = {
+    "timeout": 900,
+    "max_retries": 1,
+    "retry_delay": 30,
+    "pause_between_agents": 0,
+}
 
 
 @dataclass
@@ -105,40 +114,136 @@ class OrchestratorConfig:
         with open(self.config_dir / "project.yaml", "w") as f:
             yaml.dump(self.project, f, default_flow_style=False, allow_unicode=True)
 
+    # ----- Agent & Mode Resolution -----
+
+    def get_all_agent_ids(self) -> list[str]:
+        """All agent IDs defined in agents.yaml."""
+        return list(self.agents.get("agents", {}).keys())
+
+    def get_default_mode(self) -> str:
+        """Mode marked as default in YAML, or 'dev-team'."""
+        modes = self.agents.get("modes", {})
+        for name, defn in modes.items():
+            if defn.get("default"):
+                return name
+        return "dev-team"
+
+    def get_all_mode_names(self) -> set[str]:
+        """All valid mode names, aliases, and single agent names."""
+        names: set[str] = set()
+        modes = self.agents.get("modes", {})
+        for name, defn in modes.items():
+            names.add(name)
+            for alias in defn.get("aliases", []):
+                names.add(alias)
+        names.update(self.agents.get("agents", {}).keys())
+        return names
+
+    def _build_alias_map(self) -> dict[str, str]:
+        """Build alias -> canonical mode name mapping from YAML."""
+        alias_map: dict[str, str] = {}
+        modes = self.agents.get("modes", {})
+        for name, defn in modes.items():
+            alias_map[name] = name
+            for alias in defn.get("aliases", []):
+                alias_map[alias] = name
+        return alias_map
+
     def resolve_agent_ids(self, mode: str) -> list[str]:
-        """Resolve mode name to list of agent IDs.
+        """Resolve mode name (or alias or agent name) to agent ID list.
+
+        Reads from the 'modes' section in agents.yaml. Falls back to
+        legacy 'global.*_order' keys for backward compatibility.
 
         Args:
-            mode: One of 'all', 'dev-team', 'minimal', 'security', or a single agent name.
+            mode: Mode name, alias, or single agent name.
 
         Returns:
-            List of agent IDs to run.
+            Ordered list of agent IDs to run.
 
         Raises:
-            ConfigError: If mode is unknown or agent not found.
+            ConfigError: If mode is unknown or references undefined agents.
         """
-        global_cfg = self.agents.get("global", {})
+        modes_cfg = self.agents.get("modes", {})
         known_agents = set(self.agents.get("agents", {}).keys())
 
-        if mode in ("all",):
-            ids = global_cfg.get("execution_order", list(known_agents))
-        elif mode in ("dev-team", "dev"):
-            ids = global_cfg.get("dev_team_order", ["po", "pm", "dev1", "dev2", "devops", "tester"])
-        elif mode in ("minimal", "min"):
-            ids = global_cfg.get("minimal_order", ["po", "dev1", "tester"])
-        elif mode in ("security", "sec"):
-            ids = global_cfg.get("security_order", ["sec_analyst", "sec_engineer", "sec_pentester"])
-        elif mode in known_agents:
-            ids = [mode]
-        else:
-            raise ConfigError(
-                f"Unknown mode '{mode}'. Valid: all, dev-team, minimal, security, "
-                f"or a single agent: {', '.join(sorted(known_agents))}"
-            )
+        # Try modes section first (with alias resolution)
+        if modes_cfg:
+            alias_map = self._build_alias_map()
+            canonical = alias_map.get(mode)
+            if canonical and canonical in modes_cfg:
+                ids = modes_cfg[canonical].get("agents", [])
+                self._validate_agent_ids(ids, mode, known_agents)
+                return ids
 
-        # Validate all agent IDs exist
+        # Single agent name
+        if mode in known_agents:
+            return [mode]
+
+        # Legacy fallback: global.*_order keys
+        ids = self._resolve_legacy_mode(mode)
+        if ids is not None:
+            self._validate_agent_ids(ids, mode, known_agents)
+            return ids
+
+        # Nothing matched
+        valid = sorted(self.get_all_mode_names())
+        raise ConfigError(
+            f"Unknown mode '{mode}'. Valid: {', '.join(valid)}"
+        )
+
+    def _resolve_legacy_mode(self, mode: str) -> list[str] | None:
+        """Fallback: resolve mode from legacy global.*_order keys."""
+        global_cfg = self.agents.get("global", {})
+        legacy_map = {
+            "all": "execution_order",
+            "dev-team": "dev_team_order",
+            "dev": "dev_team_order",
+            "minimal": "minimal_order",
+            "min": "minimal_order",
+            "security": "security_order",
+            "sec": "security_order",
+        }
+        key = legacy_map.get(mode)
+        if key and key in global_cfg:
+            return global_cfg[key]
+        return None
+
+    def _validate_agent_ids(self, ids: list[str], mode: str, known: set[str]) -> None:
+        """Raise ConfigError if any agent ID is undefined."""
         for aid in ids:
-            if aid not in known_agents:
-                raise ConfigError(f"Agent '{aid}' referenced in mode '{mode}' not found in agents.yaml")
+            if aid not in known:
+                raise ConfigError(
+                    f"Agent '{aid}' referenced in mode '{mode}' not found in agents.yaml"
+                )
 
-        return ids
+    # ----- Execution Parameters -----
+
+    def get_execution_params(self, agent_id: str | None = None) -> dict[str, Any]:
+        """Get execution parameters, optionally merged with per-agent overrides.
+
+        Args:
+            agent_id: If provided, merge agent-specific overrides.
+
+        Returns:
+            Dict with keys: timeout, max_retries, retry_delay, pause_between_agents
+        """
+        exec_cfg = self.agents.get("execution", {})
+        params = {
+            "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
+            "max_retries": exec_cfg.get("max_retries", DEFAULT_EXECUTION["max_retries"]),
+            "retry_delay": exec_cfg.get("retry_delay", DEFAULT_EXECUTION["retry_delay"]),
+            "pause_between_agents": exec_cfg.get("pause_between_agents", DEFAULT_EXECUTION["pause_between_agents"]),
+        }
+        if agent_id:
+            overrides = exec_cfg.get("overrides", {})
+            if isinstance(overrides, dict) and agent_id in overrides:
+                agent_overrides = overrides[agent_id]
+                if isinstance(agent_overrides, dict):
+                    params.update(agent_overrides)
+        return params
+
+    def get_mode_descriptions(self) -> dict[str, str]:
+        """Get mode name -> description mapping for help text."""
+        modes = self.agents.get("modes", {})
+        return {name: defn.get("description", "") for name, defn in modes.items()}

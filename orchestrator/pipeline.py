@@ -39,6 +39,8 @@ class PipelineContext:
     skip_agents: bool = False
     errors: list[OrchestratorError] = field(default_factory=list)
 
+    execution_params: dict[str, Any] = field(default_factory=dict)
+
     verbose: bool = False
     dry_run: bool = False
     no_increment: bool = False

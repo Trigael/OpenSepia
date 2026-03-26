@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from orchestrator.config import OrchestratorConfig
+from orchestrator.config import OrchestratorConfig, DEFAULT_EXECUTION
 from orchestrator.errors import ConfigError
 
 
@@ -88,3 +88,95 @@ def test_resolve_unknown_mode_raises():
     config = OrchestratorConfig.load()
     with pytest.raises(ConfigError, match="Unknown mode"):
         config.resolve_agent_ids("nonexistent-mode")
+
+
+# ---------------------------------------------------------------------------
+# get_all_agent_ids
+# ---------------------------------------------------------------------------
+
+def test_get_all_agent_ids():
+    config = OrchestratorConfig.load()
+    ids = config.get_all_agent_ids()
+    assert len(ids) == 9
+    assert "po" in ids
+    assert "sec_pentester" in ids
+
+
+# ---------------------------------------------------------------------------
+# get_default_mode
+# ---------------------------------------------------------------------------
+
+def test_get_default_mode():
+    config = OrchestratorConfig.load()
+    default = config.get_default_mode()
+    assert default == "dev-team"
+
+
+# ---------------------------------------------------------------------------
+# get_all_mode_names
+# ---------------------------------------------------------------------------
+
+def test_get_all_mode_names_includes_modes():
+    config = OrchestratorConfig.load()
+    names = config.get_all_mode_names()
+    assert "all" in names
+    assert "dev-team" in names
+    assert "minimal" in names
+    assert "security" in names
+
+
+def test_get_all_mode_names_includes_aliases():
+    config = OrchestratorConfig.load()
+    names = config.get_all_mode_names()
+    assert "dev" in names
+    assert "min" in names
+    assert "sec" in names
+
+
+def test_get_all_mode_names_includes_agent_ids():
+    config = OrchestratorConfig.load()
+    names = config.get_all_mode_names()
+    assert "po" in names
+    assert "dev1" in names
+    assert "sec_pentester" in names
+
+
+# ---------------------------------------------------------------------------
+# get_execution_params
+# ---------------------------------------------------------------------------
+
+def test_get_execution_params_defaults():
+    config = OrchestratorConfig.load()
+    params = config.get_execution_params()
+    assert params["timeout"] == 900
+    assert params["max_retries"] == 1
+    assert params["retry_delay"] == 30
+    assert "pause_between_agents" in params
+
+
+def test_get_execution_params_reads_from_yaml():
+    config = OrchestratorConfig.load()
+    params = config.get_execution_params()
+    # Should match what's in agents.yaml execution section
+    assert isinstance(params["timeout"], int)
+    assert isinstance(params["max_retries"], int)
+
+
+def test_get_execution_params_per_agent():
+    config = OrchestratorConfig.load()
+    # Even without overrides, should return same as global
+    params_global = config.get_execution_params()
+    params_agent = config.get_execution_params("po")
+    assert params_agent["timeout"] == params_global["timeout"]
+
+
+# ---------------------------------------------------------------------------
+# get_mode_descriptions
+# ---------------------------------------------------------------------------
+
+def test_get_mode_descriptions():
+    config = OrchestratorConfig.load()
+    descs = config.get_mode_descriptions()
+    assert "all" in descs
+    assert "dev-team" in descs
+    assert len(descs["all"]) > 0
