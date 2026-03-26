@@ -71,13 +71,18 @@ class AgentRunnerStep:
             self._dry_run(ctx)
             return ctx
 
+        adapter = ctx.board_adapter
+
         # Initialize standup (only if not resuming mid-agent)
         already_completed = set()
         if ctx.cycle_state and ctx.cycle_state.completed_agents:
             already_completed = set(ctx.cycle_state.completed_agents)
             log.info(f"Resuming agents — {len(already_completed)} already done, {len(ctx.agent_ids) - len(already_completed)} remaining")
         else:
-            initialize_standup_file(ctx.board_dir, ctx.sprint_num, ctx.cycle_num)
+            if adapter:
+                adapter.init_standup(ctx.sprint_num, ctx.cycle_num)
+            else:
+                initialize_standup_file(ctx.board_dir, ctx.sprint_num, ctx.cycle_num)
 
         standup_file = ctx.board_dir / "standup.md"
         state_path = ctx.project_dir / "logs" / "cycle_state.json" if ctx.cycle_state else None
@@ -176,12 +181,19 @@ class AgentRunnerStep:
         retry_delay = params["retry_delay"]
         timeout = params["timeout"]
 
+        adapter = ctx.board_adapter
+
         for attempt in range(1 + max_retries):
             try:
-                context = build_agent_context(
-                    agent_id, ctx.agents_config, ctx.project_config,
-                    ctx.board_dir, ctx.workspace_dir,
-                )
+                if adapter:
+                    from opensepia.agents.context import build_agent_context_from_adapter
+                    agent_ctx = adapter.get_agent_context(agent_id, ctx.agents_config, ctx.project_config)
+                    context = build_agent_context_from_adapter(agent_id, ctx.agents_config, agent_ctx)
+                else:
+                    context = build_agent_context(
+                        agent_id, ctx.agents_config, ctx.project_config,
+                        ctx.board_dir, ctx.workspace_dir,
+                    )
 
                 agent_result = invoke_agent(
                     agent_id=agent_id,
@@ -216,11 +228,22 @@ class AgentRunnerStep:
                     if attempt > 0:
                         log.info(f"Retry successful (attempt {attempt + 1})")
 
-                    files_written = apply_output(
-                        agent_id, result_dict, ctx.agents_config,
-                        ctx.project_dir, ctx.board_dir, standup_file,
-                        verbose=ctx.verbose,
-                    )
+                    if adapter:
+                        from opensepia.agents.parser import parse_files_section
+                        parsed = parse_files_section(result_dict["response"])
+                        files_written = adapter.apply_agent_output(agent_id, parsed, ctx.agents_config)
+                        # Handle standup fallback and provider comments
+                        # (these stay in writer.py for now — adapter handles file I/O only)
+                        from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
+                        _handle_standup_fallback(agent_id, result_dict, parsed, ctx.agents_config, standup_file)
+                        _handle_provider_comments(agent_id, parsed)
+                        adapter.archive_inbox(agent_id)
+                    else:
+                        files_written = apply_output(
+                            agent_id, result_dict, ctx.agents_config,
+                            ctx.project_dir, ctx.board_dir, standup_file,
+                            verbose=ctx.verbose,
+                        )
                     result_dict["files_written"] = files_written
                     return result_dict
 
@@ -263,10 +286,16 @@ class AgentRunnerStep:
 
     def _dry_run(self, ctx: PipelineContext) -> None:
         """Print context for each agent without calling Claude."""
+        adapter = ctx.board_adapter
         for aid in ctx.agent_ids:
-            context = build_agent_context(
-                aid, ctx.agents_config, ctx.project_config,
-                ctx.board_dir, ctx.workspace_dir,
-            )
+            if adapter:
+                from opensepia.agents.context import build_agent_context_from_adapter
+                agent_ctx = adapter.get_agent_context(aid, ctx.agents_config, ctx.project_config)
+                context = build_agent_context_from_adapter(aid, ctx.agents_config, agent_ctx)
+            else:
+                context = build_agent_context(
+                    aid, ctx.agents_config, ctx.project_config,
+                    ctx.board_dir, ctx.workspace_dir,
+                )
             log.step("agent_runner", f"--- {aid} ({len(context)} chars) ---")
             log.info(context[:1500] + "..." if len(context) > 1500 else context)

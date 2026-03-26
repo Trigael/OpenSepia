@@ -205,6 +205,14 @@ def cmd_run(argv: list[str]) -> None:
         sys.exit(0)
 
     try:
+        # Create board adapter
+        from opensepia.board_adapter_markdown import MarkdownBoardAdapter
+        board_adapter = MarkdownBoardAdapter(
+            board_dir=config.board_dir,
+            workspace_dir=config.workspace_dir,
+            project_dir=config.project_dir,
+        )
+
         ctx = PipelineContext(
             mode=mode,
             tool_dir=config.tool_dir,
@@ -222,6 +230,7 @@ def cmd_run(argv: list[str]) -> None:
             verbose=args.verbose,
             dry_run=args.dry_run,
             no_increment=args.no_increment,
+            board_adapter=board_adapter,
         )
 
         # Check for interrupted cycle
