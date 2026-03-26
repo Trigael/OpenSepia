@@ -266,7 +266,7 @@ class GitLabProvider(BoardProvider):
         import json as _json
         cache_path = Path(__file__).parent.parent.parent / "board" / ".gitlab_issue_map.json"
         try:
-            with open(cache_path, "r") as f:
+            with open(cache_path, "r", encoding="utf-8") as f:
                 file_cache = _json.load(f)
             if story_id in file_cache:
                 iid = file_cache[story_id]

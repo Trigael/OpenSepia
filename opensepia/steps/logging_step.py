@@ -61,7 +61,7 @@ class CycleLogStep:
         # Write cycle log
         fname = datetime.now().strftime("cycle_%Y%m%d_%H%M%S.json")
         log_path = ctx.logs_dir / fname
-        with open(log_path, "w") as f:
+        with open(log_path, "w", encoding="utf-8") as f:
             json.dump(log_entry, f, indent=2, ensure_ascii=False)
 
         print(f"  Cycle log: {fname}")

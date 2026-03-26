@@ -88,7 +88,7 @@ class OrchestratorConfig:
         if not agents_file.exists():
             raise ConfigError(f"Missing agents config: {agents_file}")
         try:
-            with open(agents_file, "r") as f:
+            with open(agents_file, "r", encoding="utf-8") as f:
                 agents = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ConfigError(f"Invalid agents.yaml: {e}") from e
@@ -101,7 +101,7 @@ class OrchestratorConfig:
         if not project_file.exists():
             raise ConfigError(f"Missing project config: {project_file}")
         try:
-            with open(project_file, "r") as f:
+            with open(project_file, "r", encoding="utf-8") as f:
                 project = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ConfigError(f"Invalid project.yaml: {e}") from e
@@ -127,7 +127,7 @@ class OrchestratorConfig:
 
     def save_project(self) -> None:
         """Write project.yaml back to disk."""
-        with open(self.project_dir / "project.yaml", "w") as f:
+        with open(self.project_dir / "project.yaml", "w", encoding="utf-8") as f:
             yaml.dump(self.project, f, default_flow_style=False, allow_unicode=True)
 
     # ----- Agent & Mode Resolution -----

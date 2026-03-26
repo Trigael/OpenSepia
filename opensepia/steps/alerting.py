@@ -38,7 +38,7 @@ class AlertingStep:
         logs_dir = ctx.project_dir / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         alerts_log = logs_dir / "alerts.log"
-        with open(alerts_log, "a") as f:
+        with open(alerts_log, "a", encoding="utf-8") as f:
             f.write(alert_msg + "\n")
 
         # Create provider issue

@@ -133,7 +133,7 @@ class OrchestratorDaemon:
         CREATE_NO_WINDOW = 0x08000000
         DETACHED_PROCESS = 0x00000008
 
-        with open(self.log_path, "a") as log_file:
+        with open(self.log_path, "a", encoding="utf-8") as log_file:
             proc = subprocess.Popen(
                 cmd,
                 stdout=log_file,

@@ -506,7 +506,7 @@ def cmd_init(argv: list[str]) -> None:
     # Update project.yaml
     project_file = project_dir / "project.yaml"
     if project_file.exists():
-        with open(project_file, "r") as f:
+        with open(project_file, "r", encoding="utf-8") as f:
             project_cfg = _yaml.safe_load(f) or {}
     else:
         project_cfg = {"project": {}, "sprint": {}, "limits": {}}
@@ -516,7 +516,7 @@ def cmd_init(argv: list[str]) -> None:
     project_cfg.setdefault("sprint", {})["current_sprint"] = 1
     project_cfg["sprint"]["current_cycle"] = 0
 
-    with open(project_file, "w") as f:
+    with open(project_file, "w", encoding="utf-8") as f:
         _yaml.dump(project_cfg, f, default_flow_style=False, allow_unicode=True)
 
     print(f"Project initialized!")
@@ -552,7 +552,7 @@ def cmd_monitor(argv: list[str]) -> None:
         if not latest.exists():
             print("No logs yet.")
             return
-        with open(latest) as f:
+        with open(latest, encoding="utf-8") as f:
             data = _json.load(f)
         print(f"\n  Last cycle: {data.get('timestamp', '?')}")
         for a in data.get("agents", []):
@@ -574,7 +574,7 @@ def cmd_monitor(argv: list[str]) -> None:
             try:
                 ts = datetime.strptime(f.stem, "%Y%m%d_%H%M%S")
                 if ts >= cutoff:
-                    with open(f) as fh:
+                    with open(f, encoding="utf-8") as fh:
                         data = _json.load(fh)
                     data["_ts"] = ts
                     logs.append(data)
