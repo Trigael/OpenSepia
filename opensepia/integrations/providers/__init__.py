@@ -46,5 +46,18 @@ def detect_provider() -> Optional[BoardProvider]:
             logger.info("Board provider: GitHub")
             return provider
 
+    # Markdown (local files — always available as fallback)
+    from .markdown import MarkdownProvider
+    try:
+        from opensepia.config import OrchestratorConfig
+        config = OrchestratorConfig.load()
+        board_dir = config.board_dir
+    except Exception:
+        board_dir = None
+    provider = MarkdownProvider(board_dir=board_dir)
+    if provider.enabled:
+        logger.info("Board provider: Markdown (local files)")
+        return provider
+
     logger.warning("No board provider found")
     return None

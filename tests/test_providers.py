@@ -3,9 +3,10 @@
 from opensepia.integrations.providers import detect_provider
 
 
-def test_detect_provider_returns_none_when_no_env_vars(clean_env):
+def test_detect_provider_returns_markdown_fallback_when_no_env_vars(clean_env):
     result = detect_provider()
-    assert result is None
+    # With no external provider configured, falls back to markdown (or None)
+    assert result is None or result.name == "markdown"
 
 
 def test_detect_provider_returns_gitlab_when_gitlab_env_set(clean_env):
@@ -45,19 +46,25 @@ def test_detect_provider_gitlab_takes_priority(clean_env):
     assert result.name == "gitlab"
 
 
-def test_detect_provider_returns_none_with_partial_gitlab(clean_env):
+def test_detect_provider_returns_fallback_with_partial_gitlab(clean_env):
     mp = clean_env
-    # Only GITLAB_URL set, missing TOKEN
+    # Only GITLAB_URL set, missing TOKEN — should NOT get GitLab
     mp.setenv("GITLAB_URL", "https://gitlab.example.com")
 
     result = detect_provider()
-    assert result is None
+    # Falls back to markdown provider (or None if no board dir)
+    assert result is None or result.name == "markdown"
+    if result:
+        assert result.name != "gitlab"
 
 
-def test_detect_provider_returns_none_with_partial_github(clean_env):
+def test_detect_provider_returns_fallback_with_partial_github(clean_env):
     mp = clean_env
-    # Only GITHUB_TOKEN set, missing REPO
+    # Only GITHUB_TOKEN set, missing REPO — should NOT get GitHub
     mp.setenv("GITHUB_TOKEN", "ghp_fake_token")
 
     result = detect_provider()
-    assert result is None
+    # Falls back to markdown provider (or None if no board dir)
+    assert result is None or result.name == "markdown"
+    if result:
+        assert result.name != "github"
