@@ -14,11 +14,11 @@ import logging
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from orchestrator.config import OrchestratorConfig
-from orchestrator.daemon_state import DaemonState, DAEMON_STATE_FILE
-from orchestrator.errors import OrchestratorError, ConfigError, LockError
-from orchestrator.lockfile import ProcessLock
-from orchestrator.pipeline import PipelineContext
+from opensepia.config import OrchestratorConfig
+from opensepia.daemon_state import DaemonState, DAEMON_STATE_FILE
+from opensepia.errors import OrchestratorError, ConfigError, LockError
+from opensepia.lockfile import ProcessLock
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +205,7 @@ class OrchestratorDaemon:
 
     def _run_single_cycle(self) -> tuple[str, list[str]]:
         """Execute one pipeline cycle, tracking steps in state."""
-        from orchestrator.cli import build_pipeline
+        from opensepia.cli import build_pipeline
 
         try:
             config = OrchestratorConfig.load(self.project_dir)

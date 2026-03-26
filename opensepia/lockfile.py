@@ -10,7 +10,7 @@ import signal
 import logging
 from pathlib import Path
 
-from orchestrator.errors import LockError
+from opensepia.errors import LockError
 
 logger = logging.getLogger(__name__)
 

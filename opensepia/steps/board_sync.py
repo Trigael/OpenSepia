@@ -6,7 +6,7 @@ Syncs board/backlog.md and board/sprint.md to provider issues.
 
 import logging
 
-from orchestrator.pipeline import PipelineContext
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,8 @@ class BoardSyncStep:
         print("  Board sync...")
 
         try:
-            from integrations.providers import detect_provider
-            from orchestrator.board.sync import parse_backlog, parse_sprint_statuses, sync_to_provider
+            from opensepia.integrations.providers import detect_provider
+            from opensepia.board.sync import parse_backlog, parse_sprint_statuses, sync_to_provider
 
             provider = detect_provider()
             if not provider or not provider.enabled:

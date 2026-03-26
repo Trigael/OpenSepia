@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from orchestrator.daemon_state import DaemonState
+from opensepia.daemon_state import DaemonState
 
 
 @pytest.fixture

@@ -16,8 +16,8 @@ import urllib.error
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator.pipeline import PipelineContext
-from orchestrator.errors import GitSyncError
+from opensepia.pipeline import PipelineContext
+from opensepia.errors import GitSyncError
 
 logger = logging.getLogger(__name__)
 

@@ -10,13 +10,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from integrations.logging_config import load_env
+from opensepia.integrations.logging_config import load_env
 load_env()
 
-from integrations.providers.gitlab import GitLabProvider, GitLabConfig
-from integrations.git_client import GitClient, GitConfig
-from integrations.docker_client import DockerClient, DockerConfig
-from integrations.logging_config import setup_logging
+from opensepia.integrations.providers.gitlab import GitLabProvider, GitLabConfig
+from opensepia.integrations.git_client import GitClient, GitConfig
+from opensepia.integrations.docker_client import DockerClient, DockerConfig
+from opensepia.integrations.logging_config import setup_logging
 logger = setup_logging("init_integrations")
 
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from orchestrator.errors import ConfigError
+from opensepia.errors import ConfigError
 
 # Default execution parameters (used when YAML doesn't specify)
 DEFAULT_EXECUTION = {

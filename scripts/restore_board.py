@@ -21,10 +21,10 @@ SNAPSHOT_DIR = BOARD_DIR / ".snapshot"
 
 sys.path.insert(0, str(BASE_DIR))
 
-from integrations.logging_config import load_env
+from opensepia.integrations.logging_config import load_env
 load_env()
 
-from integrations.logging_config import setup_logging
+from opensepia.integrations.logging_config import setup_logging
 logger = setup_logging("restore_board")
 
 CRITICAL_FILES = ["sprint.md", "backlog.md"]
@@ -93,8 +93,8 @@ def restore_from_snapshot() -> bool:
 def restore_from_provider() -> bool:
     """Reconstruct board files from GitLab/GitHub issues."""
     try:
-        from integrations.providers import detect_provider
-        from integrations.base import BOARD_LABELS, PRIORITY_LABELS
+        from opensepia.integrations.providers import detect_provider
+        from opensepia.integrations.base import BOARD_LABELS, PRIORITY_LABELS
     except ImportError as e:
         logger.error(f"Cannot import integrations: {e}")
         return False

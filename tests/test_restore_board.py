@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orchestrator.board.restore import check_board_health
+from opensepia.board.restore import check_board_health
 
 
 # ---------------------------------------------------------------------------

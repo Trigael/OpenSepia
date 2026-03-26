@@ -14,13 +14,13 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from integrations.logging_config import load_env
+from opensepia.integrations.logging_config import load_env
 load_env()
 
-from integrations.base import BoardProvider, BOARD_LABELS, PRIORITY_LABELS
-from integrations.providers import detect_provider
+from opensepia.integrations.base import BoardProvider, BOARD_LABELS, PRIORITY_LABELS
+from opensepia.integrations.providers import detect_provider
 
-from integrations.logging_config import setup_logging
+from opensepia.integrations.logging_config import setup_logging
 logger = setup_logging("sync_board")
 
 BASE_DIR = Path(__file__).parent.parent

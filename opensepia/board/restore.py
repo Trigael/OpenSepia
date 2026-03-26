@@ -64,8 +64,8 @@ def restore_from_snapshot(board_dir: Path) -> bool:
 def restore_from_provider(board_dir: Path) -> bool:
     """Reconstruct board files from GitLab/GitHub issues."""
     try:
-        from integrations.providers import detect_provider
-        from integrations.base import BOARD_LABELS, PRIORITY_LABELS
+        from opensepia.integrations.providers import detect_provider
+        from opensepia.integrations.base import BOARD_LABELS, PRIORITY_LABELS
     except ImportError as e:
         logger.error("Cannot import integrations: %s", e)
         return False

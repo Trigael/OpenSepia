@@ -9,8 +9,8 @@ import shutil
 import logging
 from pathlib import Path
 
-from orchestrator.errors import BoardHealthError
-from orchestrator.pipeline import PipelineContext
+from opensepia.errors import BoardHealthError
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class BoardHealthStep:
 
     def _try_restore(self, ctx: PipelineContext, board_dir: Path) -> None:
         """Attempt restore from snapshot, then from provider."""
-        from orchestrator.board.restore import restore_from_snapshot, restore_from_provider
+        from opensepia.board.restore import restore_from_snapshot, restore_from_provider
 
         # Try snapshot first
         snapshot_dir = board_dir / ".snapshot"

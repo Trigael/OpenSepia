@@ -10,7 +10,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator.pipeline import PipelineContext
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class AlertingStep:
         """Create an alert issue on the provider."""
         try:
             sys.path.insert(0, str(ctx.project_dir))
-            from integrations.providers import detect_provider
+            from opensepia.integrations.providers import detect_provider
 
             client = detect_provider()
             if not client or not client.enabled:

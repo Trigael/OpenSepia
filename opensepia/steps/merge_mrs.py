@@ -4,7 +4,7 @@ AI Dev Team — Auto-merge approved MRs step.
 
 import logging
 
-from orchestrator.pipeline import PipelineContext
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class MergeMRsStep:
         print("  Auto-merge approved MRs...")
 
         try:
-            from integrations.providers import detect_provider
+            from opensepia.integrations.providers import detect_provider
             from scripts.merge_approved_mrs import merge_approved_mrs
 
             client = detect_provider()

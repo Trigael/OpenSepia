@@ -11,7 +11,7 @@ import yaml
 from pathlib import Path
 from typing import Any
 
-from orchestrator.pipeline import PipelineContext
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 

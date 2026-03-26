@@ -9,7 +9,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from agent.parser import ParsedFile, parse_files_section, parse_standup_from_response
+from opensepia.agents.parser import ParsedFile, parse_files_section, parse_standup_from_response
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +150,8 @@ def apply_output(
 
     # Provider comments (WRITE path)
     try:
-        from integrations.providers import detect_provider
-        from orchestrator.board.comments import post_agent_messages_to_provider, reset_mr_cache
+        from opensepia.integrations.providers import detect_provider
+        from opensepia.board.comments import post_agent_messages_to_provider, reset_mr_cache
         provider = detect_provider()
         if provider and provider.enabled:
             reset_mr_cache()

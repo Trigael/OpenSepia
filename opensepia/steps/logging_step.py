@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import datetime
 
-from orchestrator.pipeline import PipelineContext
+from opensepia.pipeline import PipelineContext
 
 logger = logging.getLogger(__name__)
 

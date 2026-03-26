@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
-from orchestrator.errors import OrchestratorError
+from opensepia.errors import OrchestratorError
 
 logger = logging.getLogger(__name__)
 

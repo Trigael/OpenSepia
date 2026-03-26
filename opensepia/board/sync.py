@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from integrations.base import BoardProvider, BOARD_LABELS, PRIORITY_LABELS
+from opensepia.integrations.base import BoardProvider, BOARD_LABELS, PRIORITY_LABELS
 
 logger = logging.getLogger(__name__)
 

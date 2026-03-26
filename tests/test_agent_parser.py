@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent.parser import parse_files_section, parse_standup_from_response, ParsedFile
+from opensepia.agents.parser import parse_files_section, parse_standup_from_response, ParsedFile
 
 
 # ---------------------------------------------------------------------------

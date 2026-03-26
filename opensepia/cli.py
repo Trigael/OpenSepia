@@ -22,19 +22,19 @@ import collections
 from datetime import datetime
 from pathlib import Path
 
-from orchestrator.config import OrchestratorConfig
-from orchestrator.errors import OrchestratorError, ConfigError, LockError
-from orchestrator.lockfile import ProcessLock
-from orchestrator.pipeline import Pipeline, PipelineContext
-from orchestrator.steps.board_health import BoardHealthStep, SnapshotStep
-from orchestrator.steps.sprint_check import SprintCheckStep, SprintSyncStep
-from orchestrator.steps.agent_runner import AgentRunnerStep
-from orchestrator.steps.standup_sync import StandupSyncStep
-from orchestrator.steps.merge_mrs import MergeMRsStep
-from orchestrator.steps.git_sync import GitSyncStep
-from orchestrator.steps.board_sync import BoardSyncStep
-from orchestrator.steps.logging_step import CycleLogStep
-from orchestrator.steps.alerting import AlertingStep
+from opensepia.config import OrchestratorConfig
+from opensepia.errors import OrchestratorError, ConfigError, LockError
+from opensepia.lockfile import ProcessLock
+from opensepia.pipeline import Pipeline, PipelineContext
+from opensepia.steps.board_health import BoardHealthStep, SnapshotStep
+from opensepia.steps.sprint_check import SprintCheckStep, SprintSyncStep
+from opensepia.steps.agent_runner import AgentRunnerStep
+from opensepia.steps.standup_sync import StandupSyncStep
+from opensepia.steps.merge_mrs import MergeMRsStep
+from opensepia.steps.git_sync import GitSyncStep
+from opensepia.steps.board_sync import BoardSyncStep
+from opensepia.steps.logging_step import CycleLogStep
+from opensepia.steps.alerting import AlertingStep
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,7 @@ def cmd_run(argv: list[str]) -> None:
 
 def cmd_start(argv: list[str]) -> None:
     """Start the background daemon."""
-    from orchestrator.daemon import OrchestratorDaemon
+    from opensepia.daemon import OrchestratorDaemon
 
     parser = argparse.ArgumentParser(prog="opensepia start", description="Start background daemon")
     parser.add_argument("--mode", "-m", default="dev-team", help="Execution mode (default: dev-team)")
@@ -238,7 +238,7 @@ def cmd_start(argv: list[str]) -> None:
 
 def cmd_stop(argv: list[str]) -> None:
     """Stop the running daemon."""
-    from orchestrator.daemon import stop_daemon, get_daemon_status
+    from opensepia.daemon import stop_daemon, get_daemon_status
 
     state = get_daemon_status()
     if state.status in ("stopped", "crashed") or not state.is_process_alive():
@@ -256,7 +256,7 @@ def cmd_stop(argv: list[str]) -> None:
 
 def cmd_status(argv: list[str]) -> None:
     """Show daemon and project status."""
-    from orchestrator.daemon import get_daemon_status
+    from opensepia.daemon import get_daemon_status
 
     state = get_daemon_status()
 
@@ -322,7 +322,7 @@ def cmd_status(argv: list[str]) -> None:
 
 def cmd_pause(argv: list[str]) -> None:
     """Pause the running daemon."""
-    from orchestrator.daemon import send_pause_signal, get_daemon_status
+    from opensepia.daemon import send_pause_signal, get_daemon_status
 
     state = get_daemon_status()
     if not state.is_process_alive():
@@ -341,7 +341,7 @@ def cmd_pause(argv: list[str]) -> None:
 
 def cmd_resume(argv: list[str]) -> None:
     """Resume a paused daemon."""
-    from orchestrator.daemon import send_pause_signal, get_daemon_status
+    from opensepia.daemon import send_pause_signal, get_daemon_status
 
     state = get_daemon_status()
     if not state.is_process_alive():

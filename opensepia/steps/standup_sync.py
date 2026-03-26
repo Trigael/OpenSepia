@@ -7,8 +7,8 @@ Posts standup.md content to provider issues.
 import logging
 from pathlib import Path
 
-from orchestrator.pipeline import PipelineContext
-from orchestrator.errors import ProviderError
+from opensepia.pipeline import PipelineContext
+from opensepia.errors import ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -26,8 +26,8 @@ class StandupSyncStep:
         print("  Standup -> provider sync...")
 
         try:
-            from integrations.providers import detect_provider
-            from orchestrator.board.comments import post_standup_to_provider
+            from opensepia.integrations.providers import detect_provider
+            from opensepia.board.comments import post_standup_to_provider
 
             client = detect_provider()
             if client and client.enabled:

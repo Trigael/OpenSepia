@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orchestrator.board.sync import parse_backlog, normalize_status, parse_sprint_statuses
+from opensepia.board.sync import parse_backlog, normalize_status, parse_sprint_statuses
 
 
 # ---------------------------------------------------------------------------

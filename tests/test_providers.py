@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from integrations.providers import detect_provider
+from opensepia.integrations.providers import detect_provider
 
 
 def test_detect_provider_returns_none_when_no_env_vars(clean_env):

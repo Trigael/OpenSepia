@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orchestrator.pipeline import Pipeline, PipelineContext
-from orchestrator.errors import OrchestratorError
+from opensepia.pipeline import Pipeline, PipelineContext
+from opensepia.errors import OrchestratorError
 
 
 # ---------------------------------------------------------------------------

@@ -5,8 +5,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from integrations.git_client import GitConfig
-from integrations.docker_client import DockerConfig
+from opensepia.integrations.git_client import GitConfig
+from opensepia.integrations.docker_client import DockerConfig
 
 
 # ---------------------------------------------------------------------------

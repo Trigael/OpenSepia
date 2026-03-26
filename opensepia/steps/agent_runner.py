@@ -11,11 +11,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from orchestrator.pipeline import PipelineContext
-from agent.context import build_agent_context
-from agent.invoker import invoke_agent
-from orchestrator.config import DEFAULT_EXECUTION
-from agent.writer import (
+from opensepia.pipeline import PipelineContext
+from opensepia.agents.context import build_agent_context
+from opensepia.agents.invoker import invoke_agent
+from opensepia.config import DEFAULT_EXECUTION
+from opensepia.agents.writer import (
     apply_output, read_file_safe, write_file, archive_inbox,
 )
 

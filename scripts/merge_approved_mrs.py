@@ -13,9 +13,9 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from integrations.base import BoardProvider
-from integrations.providers import detect_provider
-from integrations.logging_config import setup_logging
+from opensepia.integrations.base import BoardProvider
+from opensepia.integrations.providers import detect_provider
+from opensepia.integrations.logging_config import setup_logging
 
 logger = setup_logging("merge_approved_mrs")
 
@@ -172,7 +172,7 @@ def merge_approved_mrs(client: BoardProvider) -> tuple[int, int]:
 
 
 if __name__ == "__main__":
-    from integrations.logging_config import load_env
+    from opensepia.integrations.logging_config import load_env
     load_env()
 
     client = detect_provider()

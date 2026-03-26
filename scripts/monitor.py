@@ -13,7 +13,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from integrations.logging_config import setup_logging
+from opensepia.integrations.logging_config import setup_logging
 logger = setup_logging("monitor")
 
 LOGS_DIR = Path(__file__).parent.parent / "logs" / "runs"

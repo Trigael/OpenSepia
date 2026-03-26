@@ -53,7 +53,7 @@ def main() -> None:
         sys.exit(1)
 
     # Delegate to orchestrator CLI
-    from orchestrator.cli import cmd_run
+    from opensepia.cli import cmd_run
     argv = [mode]
     if args.verbose:
         argv.append("--verbose")

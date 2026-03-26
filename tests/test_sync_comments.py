@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from orchestrator.board.comments import (
+from opensepia.board.comments import (
     extract_story_refs,
     extract_mr_refs,
     truncate_for_comment,

@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from integrations.base import (
+from opensepia.integrations.base import (
     BOARD_LABELS, PRIORITY_LABELS, ROLE_LABELS, AGENT_DISPLAY,
     BoardProvider,
 )

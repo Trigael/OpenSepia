@@ -11,8 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from agent.workspace import get_workspace_tree
-from agent.writer import read_file_safe
+from opensepia.agents.workspace import get_workspace_tree
+from opensepia.agents.writer import read_file_safe
 
 logger = logging.getLogger(__name__)
 
@@ -152,8 +152,8 @@ def _fetch_provider_comments(board_dir: Path, base_dir: Path) -> str:
     """
     try:
         sys.path.insert(0, str(base_dir))
-        from integrations.providers import detect_provider
-        from orchestrator.board.comments import get_active_story_ids, fetch_comments_for_context
+        from opensepia.integrations.providers import detect_provider
+        from opensepia.board.comments import get_active_story_ids, fetch_comments_for_context
 
         provider = detect_provider()
         if provider and provider.enabled:
