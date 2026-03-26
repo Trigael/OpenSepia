@@ -238,7 +238,7 @@ class AgentRunnerStep:
         for aid in ctx.agent_ids:
             context = build_agent_context(
                 aid, ctx.agents_config, ctx.project_config,
-                ctx.board_dir, ctx.workspace_dir, ctx.project_dir,
+                ctx.board_dir, ctx.workspace_dir,
             )
             print(f"\n--- {aid} ({len(context)} chars) ---")
             print(context[:1500] + "..." if len(context) > 1500 else context)
