@@ -45,45 +45,45 @@ OpenSepia — AI Dev Team
 Usage:
   opensepia <command> [options]
 
-Project:
+Getting started:
+  setup                 Guided first-run wizard
   init <name> [desc]    Initialize a new project
-  reset                 Reset project (clears board, workspace, logs)
 
 Daemon:
   start [--mode MODE]   Start the daemon (runs cycles in background)
   stop                  Stop the running daemon
   status                Show current status
-  pause                 Pause the daemon after current cycle
-  resume                Resume a paused daemon
+  pause / resume        Pause or resume the daemon
 
 Run:
   run [mode]            Run a single cycle, then exit
   run [mode] --dry-run  Preview agent context without calling Claude
 
-Observe:
-  logs [-f] [-n N]      View daemon logs
-  monitor [days]        Show cycle statistics
+Interact:
+  board                 Show current sprint board
+  message <agent> text  Send a message to an agent
+  config                Show editable configuration
 
-Configure:
-  config                Show all editable configuration
-  config project        Show project settings
-  config agents         Show agent modes and execution params
-  config env            Show provider integration status
+Observe:
+  logs [-f]             View daemon logs
+  monitor [days]        Show cycle statistics
+  history [count]       Show recent cycle history
+
+Manage:
+  reset                 Reset project state
 
 Run modes:
-  dev-team              6 agents: PO, PM, Dev1, Dev2, DevOps, Tester (default)
-  minimal               3 agents: PO, Dev1, Tester
-  all                   All 9 agents
-  security              3 agents: Sec Analyst, Engineer, Pentester
-  <agent>               Single agent (po, pm, dev1, dev2, devops, tester,
-                        sec_analyst, sec_engineer, sec_pentester)
+  dev-team   6 agents (default)     minimal   3 agents
+  all        9 agents               security  3 agents
+  <agent>    Single agent (po, pm, dev1, dev2, devops, tester,
+             sec_analyst, sec_engineer, sec_pentester)
 
 Examples:
-  opensepia init "My API" "REST API with FastAPI"
-  opensepia start
-  opensepia status
-  opensepia config
-  opensepia run po --dry-run
+  opensepia setup                        First-time setup
+  opensepia start                        Start running
+  opensepia board                        Check sprint progress
+  opensepia message pm "Focus on API"    Talk to an agent
+  opensepia history                      Recent cycles
 """
 
 
@@ -183,7 +183,7 @@ def cmd_run(argv: list[str]) -> None:
     args = parser.parse_args(argv)
     mode = args.mode
 
-    log.set_verbose(args.verbose)
+    log.init(verbose=args.verbose)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.CRITICAL,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -204,8 +204,13 @@ def cmd_run(argv: list[str]) -> None:
     issues = check_project_ready(config)
     if issues:
         for issue in issues:
-            print(f"ERROR: {issue}")
+            log.error(issue)
         sys.exit(1)
+
+    # Config validation warnings (non-blocking)
+    config_warnings = config.validate()
+    for w in config_warnings:
+        log.warn(w)
 
     try:
         agent_ids = config.resolve_agent_ids(mode)
@@ -298,8 +303,13 @@ def cmd_start(argv: list[str]) -> None:
     issues = check_project_ready(config)
     if issues:
         for issue in issues:
-            print(f"ERROR: {issue}")
+            log.error(issue)
         sys.exit(1)
+
+    # Config validation warnings
+    config_warnings = config.validate()
+    for w in config_warnings:
+        log.warn(w)
 
     # Git status hint
     git_info = check_workspace_git(config)
@@ -920,10 +930,267 @@ def cmd_config(argv: list[str]) -> None:
 
 
 # =============================================================================
+# Command: setup (guided wizard)
+# =============================================================================
+
+def cmd_setup(argv: list[str]) -> None:
+    """Guided first-run setup wizard."""
+    import shutil as _shutil
+    import subprocess
+
+    tool_dir = Path(__file__).parent.parent
+
+    log.banner(["OpenSepia — Setup Wizard"])
+    print()
+
+    # Step 1: Check Claude CLI
+    log.header("1. Claude Code CLI")
+    if check_claude_cli():
+        try:
+            result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+            version = result.stdout.strip() or "installed"
+            log.success(f"Claude CLI: {version}")
+        except Exception:
+            log.success("Claude CLI: found")
+    else:
+        log.error("Claude Code CLI not found")
+        log.info("Install: npm install -g @anthropic-ai/claude-code")
+        log.info("Then: claude login")
+        print()
+        confirm = input("  Continue without Claude CLI? (yes/no): ")
+        if confirm.lower() != "yes":
+            return
+
+    # Step 2: Project init
+    log.header("2. Project")
+    project_dir = tool_dir / "project"
+    board_exists = (project_dir / "board" / "sprint.md").exists()
+
+    if board_exists:
+        try:
+            config = OrchestratorConfig.load()
+            name = config.project.get("project", {}).get("name", "?")
+            log.success(f"Project already initialized: {name}")
+        except ConfigError:
+            board_exists = False
+
+    if not board_exists:
+        name = input("  Project name: ").strip()
+        if not name:
+            name = "My Project"
+        desc = input("  Description: ").strip()
+        if not desc:
+            desc = "New project"
+        cmd_init([name, desc])
+
+    # Step 3: Git (optional)
+    log.header("3. Git (optional)")
+    workspace = project_dir / "workspace"
+    git_dir = workspace / ".git"
+
+    if git_dir.exists():
+        log.success("Workspace git: already initialized")
+    else:
+        confirm = input("  Set up git for the workspace? (yes/no): ").strip().lower()
+        if confirm == "yes":
+            workspace.mkdir(parents=True, exist_ok=True)
+            subprocess.run(["git", "init"], cwd=str(workspace), capture_output=True)
+            repo_url = input("  Remote repo URL (or Enter to skip): ").strip()
+            if repo_url:
+                subprocess.run(
+                    ["git", "remote", "add", "origin", repo_url],
+                    cwd=str(workspace), capture_output=True,
+                )
+                log.success(f"Git initialized with remote: {repo_url}")
+            else:
+                log.success("Git initialized (no remote — add later with git remote add origin <url>)")
+        else:
+            log.info("Skipped — agents will work without git sync")
+
+    # Step 4: Provider (optional)
+    log.header("4. Provider (optional)")
+    env_file = tool_dir / "config" / ".env"
+
+    if env_file.exists():
+        import os
+        # Quick check if tokens are set
+        env_content = env_file.read_text(encoding="utf-8")
+        has_gl = "GITLAB_TOKEN=" in env_content and "INSERT" not in env_content
+        has_gh = "GITHUB_TOKEN=" in env_content and "INSERT" not in env_content
+        if has_gl or has_gh:
+            provider = "GitLab" if has_gl else "GitHub"
+            log.success(f"Provider configured: {provider}")
+        else:
+            log.info(f"Edit config/.env with your GitLab/GitHub tokens")
+            log.info(f"File: {env_file}")
+    else:
+        env_example = tool_dir / "config" / ".env.example"
+        if env_example.exists():
+            _shutil.copy2(env_example, env_file)
+            log.info(f"Created config/.env from template")
+            log.info(f"Edit it with your tokens: {env_file}")
+        else:
+            log.info("No config/.env found — create from config/.env.example")
+
+    # Done
+    log.banner(["Setup complete!"])
+    print()
+    log.info("Next: opensepia start")
+    print()
+
+
+# =============================================================================
+# Command: board
+# =============================================================================
+
+def cmd_board(argv: list[str]) -> None:
+    """Show current board state."""
+    try:
+        config = OrchestratorConfig.load()
+    except ConfigError as e:
+        log.error(str(e))
+        return
+
+    board_dir = config.board_dir
+    sprint_path = board_dir / "sprint.md"
+
+    if not sprint_path.exists():
+        log.info("No sprint board yet. Run: opensepia init <name>")
+        return
+
+    content = sprint_path.read_text(encoding="utf-8")
+
+    # Parse into sections
+    log.header("Sprint Board")
+    current_section = ""
+    for line in content.split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            log.info(stripped)
+        elif stripped.startswith("## "):
+            current_section = stripped
+            print()
+            log.info(stripped)
+        elif stripped.startswith("- ["):
+            # Checkbox item
+            done = "[x]" in stripped or "[X]" in stripped
+            marker = "+" if done else "-"
+            text = stripped[5:].strip() if len(stripped) > 5 else stripped
+            log.info(f"  {marker} {text}")
+        elif stripped.startswith("**") and ":" in stripped:
+            log.detail(f"    {stripped}")
+
+    # Show backlog count
+    backlog_path = board_dir / "backlog.md"
+    if backlog_path.exists():
+        import re
+        backlog = backlog_path.read_text(encoding="utf-8")
+        story_count = len(re.findall(r"###\s+(STORY|BUG)-\d+", backlog))
+        print()
+        log.info(f"Backlog: {story_count} stories/bugs")
+
+    print()
+
+
+# =============================================================================
+# Command: message
+# =============================================================================
+
+def cmd_message(argv: list[str]) -> None:
+    """Send a message to an agent's inbox."""
+    parser = argparse.ArgumentParser(prog="opensepia message", description="Send a message to an agent")
+    parser.add_argument("agent", help="Agent ID (po, pm, dev1, dev2, devops, tester, sec_analyst, sec_engineer, sec_pentester)")
+    parser.add_argument("text", nargs="+", help="Message text")
+    args = parser.parse_args(argv)
+
+    try:
+        config = OrchestratorConfig.load()
+    except ConfigError as e:
+        log.error(str(e))
+        return
+
+    known = set(config.get_all_agent_ids())
+    if args.agent not in known:
+        log.error(f"Unknown agent: {args.agent}")
+        log.info(f"Valid agents: {', '.join(sorted(known))}")
+        return
+
+    inbox_path = config.board_dir / "inbox" / f"{args.agent}.md"
+    inbox_path.parent.mkdir(parents=True, exist_ok=True)
+
+    message = " ".join(args.text)
+    entry = f"\n## Message from Human\n{message}\n"
+
+    with open(inbox_path, "a", encoding="utf-8") as f:
+        f.write(entry)
+
+    agent_name = config.agents["agents"][args.agent].get("name", args.agent)
+    log.success(f"Message sent to {agent_name} ({args.agent})")
+    log.detail(f"  Inbox: {inbox_path}")
+
+
+# =============================================================================
+# Command: history
+# =============================================================================
+
+def cmd_history(argv: list[str]) -> None:
+    """Show recent cycle history."""
+    import json as _json
+
+    parser = argparse.ArgumentParser(prog="opensepia history", description="Recent cycle history")
+    parser.add_argument("count", nargs="?", type=int, default=10, help="Number of cycles (default: 10)")
+    args = parser.parse_args(argv)
+
+    try:
+        config = OrchestratorConfig.load()
+        logs_dir = config.logs_dir
+    except ConfigError:
+        logs_dir = Path(__file__).parent.parent / "project" / "logs" / "runs"
+
+    if not logs_dir.exists():
+        log.info("No cycle history yet.")
+        return
+
+    log_files = sorted(logs_dir.glob("cycle_*.json"), reverse=True)[:args.count]
+
+    if not log_files:
+        log.info("No cycle history yet.")
+        return
+
+    log.header("Cycle History")
+    for f in reversed(log_files):
+        try:
+            with open(f, encoding="utf-8") as fh:
+                data = _json.load(fh)
+
+            ts = data.get("timestamp", "?")[:19].replace("T", " ")
+            status = data.get("status", "?")
+            mode = data.get("mode", "?")
+            sprint = data.get("sprint", "?")
+            cycle = data.get("cycle", "?")
+            ok_count = data.get("agents_ok_count", 0)
+            fail_count = data.get("agents_failed_count", 0)
+
+            icon = "+" if status == "ok" else "!"
+            agents_str = f"{ok_count} ok" if fail_count == 0 else f"{ok_count} ok, {fail_count} failed"
+
+            log.info(f"[{icon}] S{sprint}C{cycle} {ts} — {mode}, {agents_str}")
+
+            if fail_count > 0:
+                failed = data.get("agents_failed", [])
+                log.detail(f"    Failed: {', '.join(failed)}")
+        except Exception:
+            continue
+
+    print()
+
+
+# =============================================================================
 # Command router
 # =============================================================================
 
 COMMANDS = {
+    "setup": cmd_setup,
     "init": cmd_init,
     "run": cmd_run,
     "start": cmd_start,
@@ -933,6 +1200,9 @@ COMMANDS = {
     "resume": cmd_resume,
     "logs": cmd_logs,
     "monitor": cmd_monitor,
+    "history": cmd_history,
+    "board": cmd_board,
+    "message": cmd_message,
     "reset": cmd_reset,
     "config": cmd_config,
     # Legacy: "daemon" subcommand still works

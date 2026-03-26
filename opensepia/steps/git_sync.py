@@ -135,7 +135,7 @@ class GitSyncStep:
         changed_files = changes_result.stdout.strip().split("\n")[:10]
         code_changes = "\n".join(changed_files)
 
-        # Build commit message
+        # Build commit message with agent co-authors
         story_slug = branch_name.split("/", 1)[1] if "/" in branch_name else ""
 
         if story_slug and not story_slug.startswith("sprint-"):
@@ -147,7 +147,20 @@ class GitSyncStep:
         if code_changes:
             commit_msg += f"\n\nChanged files:\n{code_changes}"
 
-        run_git("commit", "-m", commit_msg)
+        # Add agent co-author trailers
+        agents_cfg = ctx.agents_config.get("agents", {})
+        for aid in ctx.agent_ids:
+            agent_def = agents_cfg.get(aid, {})
+            name = agent_def.get("name", aid)
+            commit_msg += f"\nCo-authored-by: {name} <{aid}@opensepia.ai>"
+
+        # Commit as the lead agent (first in the list)
+        lead_id = ctx.agent_ids[0] if ctx.agent_ids else "opensepia"
+        lead_def = agents_cfg.get(lead_id, {})
+        lead_name = lead_def.get("name", "OpenSepia")
+        author = f"{lead_name} <{lead_id}@opensepia.ai>"
+
+        run_git("commit", "-m", commit_msg, f"--author={author}")
 
         # Push feature branch
         push_result = subprocess.run(

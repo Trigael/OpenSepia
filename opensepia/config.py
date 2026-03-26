@@ -130,6 +130,50 @@ class OrchestratorConfig:
         with open(self.project_dir / "project.yaml", "w", encoding="utf-8") as f:
             yaml.dump(self.project, f, default_flow_style=False, allow_unicode=True)
 
+    # ----- Validation -----
+
+    def validate(self) -> list[str]:
+        """Validate configuration. Returns list of warnings (empty = all good)."""
+        warnings = []
+        known_agents = set(self.agents.get("agents", {}).keys())
+
+        # Check modes reference valid agents
+        modes = self.agents.get("modes", {})
+        for mode_name, mode_def in modes.items():
+            agents_in_mode = mode_def.get("agents", [])
+            for aid in agents_in_mode:
+                if aid not in known_agents:
+                    warnings.append(
+                        f"Mode '{mode_name}' references unknown agent '{aid}'"
+                    )
+
+        # Check agents have required fields
+        for aid, agent_def in self.agents.get("agents", {}).items():
+            if not agent_def.get("name"):
+                warnings.append(f"Agent '{aid}' missing 'name' field")
+            if not agent_def.get("system_prompt"):
+                warnings.append(f"Agent '{aid}' missing 'system_prompt' field")
+
+        # Check execution params are reasonable
+        exec_cfg = self.agents.get("execution", {})
+        timeout = exec_cfg.get("timeout", 900)
+        if timeout < 30:
+            warnings.append(f"Execution timeout ({timeout}s) is very low — agents may time out")
+        if timeout > 3600:
+            warnings.append(f"Execution timeout ({timeout}s) is very high — cycles may stall")
+
+        # Check project.yaml has a name
+        proj = self.project.get("project", {})
+        if not proj.get("name") or proj.get("name") == "My Project":
+            warnings.append("Project name not set — run: opensepia init <name>")
+
+        # Check sprint config
+        sprint = self.project.get("sprint", {})
+        if sprint.get("cycles_per_sprint", 10) < 1:
+            warnings.append("cycles_per_sprint must be at least 1")
+
+        return warnings
+
     # ----- Agent & Mode Resolution -----
 
     def get_all_agent_ids(self) -> list[str]:

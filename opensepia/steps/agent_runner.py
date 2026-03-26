@@ -95,13 +95,21 @@ class AgentRunnerStep:
             agent_name = agent_cfg["name"]
             agent_color = agent_cfg["color"]
 
-            log.step("agent_runner", f"[{i + 1}/{len(ctx.agent_ids)}] {agent_name}...")
+            log.progress(agent_name, i + 1, len(ctx.agent_ids), agent_color)
 
+            start_time = time.time()
             result_dict = self._run_single_agent(
                 aid, agent_name, agent_color,
                 ctx, standup_file,
             )
+            elapsed = time.time() - start_time
             results.append(result_dict)
+
+            if result_dict.get("error"):
+                log.agent_error(agent_name, result_dict["error"])
+            else:
+                files_written = result_dict.get("files_written", 0)
+                log.agent_done(agent_name, files_written, elapsed)
 
             # Pause between agents (skip after last agent)
             if pause_between > 0 and i < len(ctx.agent_ids) - 1:
@@ -113,10 +121,16 @@ class AgentRunnerStep:
         # Print summary
         ok_count = sum(1 for r in results if not r.get("error"))
         err_count = sum(1 for r in results if r.get("error"))
-        log.success(f"Cycle {ctx.cycle_num} agents completed — {ok_count}/{len(ctx.agent_ids)} successful")
+        # Cycle summary
+        total_files = sum(r.get("files_written", 0) for r in results)
+        total_ctx = sum(r.get("context_size", 0) for r in results)
+        total_resp = sum(r.get("response_size", 0) for r in results)
+
+        log.success(f"Cycle {ctx.cycle_num} — {ok_count}/{len(ctx.agent_ids)} agents, {total_files} files written")
         if err_count:
             failed = [r["agent_name"] for r in results if r.get("error")]
             log.error(f"Failed: {', '.join(failed)}")
+        log.detail(f"Context: {total_ctx:,} chars, Response: {total_resp:,} chars")
 
         return ctx
 
@@ -191,7 +205,7 @@ class AgentRunnerStep:
                         ctx.project_dir, ctx.board_dir, standup_file,
                         verbose=ctx.verbose,
                     )
-                    log.step("agent_runner", f"{agent_name} done — {files_written} files")
+                    result_dict["files_written"] = files_written
                     return result_dict
 
             except Exception as e:
