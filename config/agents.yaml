@@ -3,40 +3,51 @@
 # Claude Code CLI version for Max subscription
 # =============================================================================
 
+# =============================================================================
+# EXECUTION MODES — defines which agents run in each mode
+# =============================================================================
+modes:
+  all:
+    description: "All 9 agents"
+    agents: [po, pm, dev1, dev2, devops, tester, sec_analyst, sec_engineer, sec_pentester]
+
+  dev-team:
+    description: "Core dev team (6 agents)"
+    agents: [po, pm, dev1, dev2, devops, tester]
+    aliases: [dev]
+    default: true
+
+  minimal:
+    description: "Minimal team (3 agents, saves rate limits)"
+    agents: [po, dev1, tester]
+    aliases: [min]
+
+  security:
+    description: "Security team only (3 agents)"
+    agents: [sec_analyst, sec_engineer, sec_pentester]
+    aliases: [sec]
+
+# =============================================================================
+# EXECUTION PARAMETERS — controls agent runtime behavior
+# =============================================================================
+execution:
+  timeout: 900              # seconds per agent invocation (15 min)
+  max_retries: 1            # retry count on failure (0 = no retries)
+  retry_delay: 30           # seconds to wait before retrying
+  pause_between_agents: 5   # seconds to wait between agents in a cycle
+
+  # Per-agent overrides (optional — only specify what differs from defaults)
+  # Example:
+  #   devops:
+  #     timeout: 1200
+  #   sec_pentester:
+  #     max_retries: 2
+  overrides: {}
+
+# =============================================================================
+# GLOBAL PROMPT CONTENT — injected into every agent's context
+# =============================================================================
 global:
-  # Agent execution order within a single cycle
-  execution_order:
-    - po
-    - pm
-    - dev1
-    - dev2
-    - devops
-    - tester
-    - sec_analyst
-    - sec_engineer
-    - sec_pentester
-
-  # Minimal mode (saves rate limits) - core team only
-  minimal_order:
-    - po
-    - dev1
-    - tester
-
-  # Dev team without security (6 agents)
-  dev_team_order:
-    - po
-    - pm
-    - dev1
-    - dev2
-    - devops
-    - tester
-
-  # Security-only mode
-  security_order:
-    - sec_analyst
-    - sec_engineer
-    - sec_pentester
-
   # Standup instructions (injected into every agent's context)
   standup_instruction: |
     ## Standup

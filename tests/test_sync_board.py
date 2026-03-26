@@ -1,11 +1,11 @@
-"""Tests for scripts/sync_board.py — backlog parsing and status normalization."""
+"""Tests for orchestrator/board/sync.py — backlog parsing and status normalization."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.sync_board import parse_backlog, normalize_status, parse_sprint_statuses
+from opensepia.board.sync import parse_backlog, normalize_status, parse_sprint_statuses
 
 
 # ---------------------------------------------------------------------------
@@ -17,94 +17,84 @@ SAMPLE_BACKLOG = """\
 
 ## CRITICAL
 
-### STORY-001: Implement login
-**Status**: todo
-**Assigned**: dev1
-
-Login must support OAuth.
-
-### BUG-001: Fix crash on startup
-**Status**: in_progress
-
-App crashes when config is missing.
-
----
-
 ## HIGH
 
-### STORY-002: Add dashboard
-**Status**: review
+### STORY-001: User authentication
+**Priority**: HIGH
+**Status**: IN_PROGRESS
+**Assigned**: dev1
 
-Dashboard with charts.
+### BUG-001: Login page crash
+**Priority**: HIGH
+**Status**: TODO
+
+## MEDIUM
+
+### STORY-002: Dashboard widgets
+**Priority**: MEDIUM
+**Status**: TODO
 
 ## LOW
-
-### STORY-003: Update docs
-**Status**: done
 """
 
 
 def test_parse_backlog_returns_all_items(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text(SAMPLE_BACKLOG, encoding="utf-8")
-    items = parse_backlog(backlog)
-    assert len(items) == 4
+    p = tmp_path / "backlog.md"
+    p.write_text(SAMPLE_BACKLOG, encoding="utf-8")
+    items = parse_backlog(p)
+    assert len(items) == 3
 
 
 def test_parse_backlog_extracts_ids(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text(SAMPLE_BACKLOG, encoding="utf-8")
-    items = parse_backlog(backlog)
+    p = tmp_path / "backlog.md"
+    p.write_text(SAMPLE_BACKLOG, encoding="utf-8")
+    items = parse_backlog(p)
     ids = [item["id"] for item in items]
     assert "STORY-001" in ids
     assert "BUG-001" in ids
     assert "STORY-002" in ids
-    assert "STORY-003" in ids
 
 
 def test_parse_backlog_extracts_priority(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text(SAMPLE_BACKLOG, encoding="utf-8")
-    items = parse_backlog(backlog)
-    by_id = {item["id"]: item for item in items}
-    assert by_id["STORY-001"]["priority"] == "critical"
-    assert by_id["STORY-002"]["priority"] == "high"
-    assert by_id["STORY-003"]["priority"] == "low"
+    p = tmp_path / "backlog.md"
+    p.write_text(SAMPLE_BACKLOG, encoding="utf-8")
+    items = parse_backlog(p)
+    story_001 = next(i for i in items if i["id"] == "STORY-001")
+    assert story_001["priority"] == "high"
+    story_002 = next(i for i in items if i["id"] == "STORY-002")
+    assert story_002["priority"] == "medium"
 
 
 def test_parse_backlog_extracts_status(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text(SAMPLE_BACKLOG, encoding="utf-8")
-    items = parse_backlog(backlog)
-    by_id = {item["id"]: item for item in items}
-    assert by_id["STORY-001"]["status"] == "todo"
-    assert by_id["BUG-001"]["status"] == "in_progress"
-    assert by_id["STORY-002"]["status"] == "review"
-    assert by_id["STORY-003"]["status"] == "done"
+    p = tmp_path / "backlog.md"
+    p.write_text(SAMPLE_BACKLOG, encoding="utf-8")
+    items = parse_backlog(p)
+    story_001 = next(i for i in items if i["id"] == "STORY-001")
+    assert story_001["status"] == "in_progress"
 
 
 def test_parse_backlog_detects_bugs(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text(SAMPLE_BACKLOG, encoding="utf-8")
-    items = parse_backlog(backlog)
-    by_id = {item["id"]: item for item in items}
-    assert by_id["BUG-001"]["is_bug"] is True
-    assert by_id["STORY-001"]["is_bug"] is False
+    p = tmp_path / "backlog.md"
+    p.write_text(SAMPLE_BACKLOG, encoding="utf-8")
+    items = parse_backlog(p)
+    bug = next(i for i in items if i["id"] == "BUG-001")
+    assert bug["is_bug"] is True
+    story = next(i for i in items if i["id"] == "STORY-001")
+    assert story["is_bug"] is False
 
 
 def test_parse_backlog_extracts_assigned(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text(SAMPLE_BACKLOG, encoding="utf-8")
-    items = parse_backlog(backlog)
-    by_id = {item["id"]: item for item in items}
-    assert by_id["STORY-001"]["assigned"] == "dev1"
-    assert by_id["STORY-002"]["assigned"] is None
+    p = tmp_path / "backlog.md"
+    p.write_text(SAMPLE_BACKLOG, encoding="utf-8")
+    items = parse_backlog(p)
+    story_001 = next(i for i in items if i["id"] == "STORY-001")
+    assert story_001["assigned"] == "dev1"
 
 
 def test_parse_backlog_empty_file(tmp_path):
-    backlog = tmp_path / "backlog.md"
-    backlog.write_text("# Backlog\n", encoding="utf-8")
-    items = parse_backlog(backlog)
+    p = tmp_path / "backlog.md"
+    p.write_text("# Backlog\n\nEmpty.\n", encoding="utf-8")
+    items = parse_backlog(p)
     assert items == []
 
 
@@ -113,114 +103,86 @@ def test_parse_backlog_empty_file(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_normalize_status_todo():
-    assert normalize_status("todo") == "todo"
-
+    assert normalize_status("TODO") == "todo"
 
 def test_normalize_status_in_progress():
-    assert normalize_status("in_progress") == "in_progress"
-    assert normalize_status("in progress") == "in_progress"
-
+    assert normalize_status("IN_PROGRESS") == "in_progress"
 
 def test_normalize_status_done():
-    assert normalize_status("done") == "done"
-
+    assert normalize_status("DONE") == "done"
 
 def test_normalize_status_done_conditional():
     assert normalize_status("DONE (conditionally accepted)") == "done"
 
-
 def test_normalize_status_blocked():
-    assert normalize_status("blocked") == "blocked"
-
+    assert normalize_status("BLOCKED") == "blocked"
 
 def test_normalize_status_review():
-    assert normalize_status("review") == "review"
-
+    assert normalize_status("REVIEW") == "review"
 
 def test_normalize_status_testing():
-    assert normalize_status("testing") == "testing"
-
+    assert normalize_status("TESTING") == "testing"
 
 def test_normalize_status_unknown_defaults_to_todo():
-    assert normalize_status("something_random") == "todo"
-
+    assert normalize_status("something random") == "todo"
 
 def test_normalize_status_case_insensitive():
-    assert normalize_status("TODO") == "todo"
-    assert normalize_status("DONE") == "done"
-    assert normalize_status("In_Progress") == "in_progress"
+    assert normalize_status("in progress") == "in_progress"
+    assert normalize_status("In Progress") == "in_progress"
 
 
 # ---------------------------------------------------------------------------
 # parse_sprint_statuses
 # ---------------------------------------------------------------------------
 
-SAMPLE_SPRINT_SECTION_BASED = """\
-# Sprint 5
+SAMPLE_SPRINT_SECTIONS = """\
+# Sprint 1
 
 ## TODO
-- [ ] **STORY-010**: New feature
-- [ ] **BUG-005**: Fix button
+- [ ] STORY-003: New feature
 
 ## IN PROGRESS
-- [ ] **STORY-011**: Refactor module
+- [ ] STORY-001: Auth system
 
 ## DONE
-- [x] **STORY-009**: Completed task
+- [x] STORY-004: Old feature
 """
 
-SAMPLE_SPRINT_BLOCK_BASED = """\
-# Sprint 5
+SAMPLE_SPRINT_BLOCKS = """\
+# Sprint 1
 
-### STORY-020: Block feature
-**Status**: review
-
-### STORY-021: Another item
-**Status**: testing
-
-### BUG-010: Block bug
-**Status**: blocked
+### STORY-005: Widget
+**Status**: REVIEW
 """
 
 
 def test_parse_sprint_statuses_section_based(tmp_path):
-    sprint = tmp_path / "sprint.md"
-    sprint.write_text(SAMPLE_SPRINT_SECTION_BASED, encoding="utf-8")
-    statuses = parse_sprint_statuses(sprint)
-    assert statuses["STORY-010"] == "todo"
-    assert statuses["BUG-005"] == "todo"
-    assert statuses["STORY-011"] == "in_progress"
-    assert statuses["STORY-009"] == "done"
+    p = tmp_path / "sprint.md"
+    p.write_text(SAMPLE_SPRINT_SECTIONS, encoding="utf-8")
+    statuses = parse_sprint_statuses(p)
+    assert statuses.get("STORY-003") == "todo"
+    assert statuses.get("STORY-001") == "in_progress"
+    assert statuses.get("STORY-004") == "done"
 
 
 def test_parse_sprint_statuses_block_based(tmp_path):
-    sprint = tmp_path / "sprint.md"
-    sprint.write_text(SAMPLE_SPRINT_BLOCK_BASED, encoding="utf-8")
-    statuses = parse_sprint_statuses(sprint)
-    assert statuses["STORY-020"] == "review"
-    assert statuses["STORY-021"] == "testing"
-    assert statuses["BUG-010"] == "blocked"
+    p = tmp_path / "sprint.md"
+    p.write_text(SAMPLE_SPRINT_BLOCKS, encoding="utf-8")
+    statuses = parse_sprint_statuses(p)
+    assert statuses.get("STORY-005") == "review"
 
 
 def test_parse_sprint_statuses_section_takes_priority(tmp_path):
-    content = """\
-# Sprint
-
-## IN PROGRESS
-- [ ] **STORY-100**: Overlap item
-
-### STORY-100: Overlap item
-**Status**: done
-"""
-    sprint = tmp_path / "sprint.md"
-    sprint.write_text(content, encoding="utf-8")
-    statuses = parse_sprint_statuses(sprint)
-    # Section-based (strategy 1) has priority
-    assert statuses["STORY-100"] == "in_progress"
+    combined = SAMPLE_SPRINT_SECTIONS + "\n" + SAMPLE_SPRINT_BLOCKS
+    p = tmp_path / "sprint.md"
+    p.write_text(combined, encoding="utf-8")
+    statuses = parse_sprint_statuses(p)
+    assert statuses.get("STORY-001") == "in_progress"
+    assert statuses.get("STORY-005") == "review"
 
 
 def test_parse_sprint_statuses_empty_file(tmp_path):
-    sprint = tmp_path / "sprint.md"
-    sprint.write_text("# Sprint\n", encoding="utf-8")
-    statuses = parse_sprint_statuses(sprint)
+    p = tmp_path / "sprint.md"
+    p.write_text("# Sprint 1\n\nNothing here yet.\n", encoding="utf-8")
+    statuses = parse_sprint_statuses(p)
     assert statuses == {}

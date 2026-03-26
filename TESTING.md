@@ -1,135 +1,44 @@
-# Testing with Claude Pro / Max
+# Testing
 
-A guide for testing AI Dev Team with Claude Pro ($20/mo) or Max ($100/mo) subscriptions.
+## Run tests
 
-## Prerequisites
-
-1. **Claude Code CLI** installed and logged in:
 ```bash
-npm install -g @anthropic-ai/claude-code
-claude login
+python3 -m pytest tests/ -v
 ```
 
-2. **Project initialized**:
+142 tests, no external API calls. All provider interactions are mocked.
+
+## Test coverage
+
+| Module | Tests | What's tested |
+|--------|-------|---------------|
+| `test_agent_parser.py` | 12 | ---FILES--- parsing, standup fallback, edge cases |
+| `test_pipeline.py` | 8 | Step execution, critical/non-critical errors, context flow |
+| `test_orchestrator_config.py` | 19 | Config loading, mode resolution, aliases, execution params |
+| `test_daemon_state.py` | 12 | State serialization, PID checks, atomic writes |
+| `test_sync_board.py` | 18 | Backlog parsing, status normalization, sprint parsing |
+| `test_sync_comments.py` | 30 | Story refs, MR refs, reviews, approvals, active story IDs |
+| `test_restore_board.py` | 7 | Board health check, missing/empty file detection |
+| `test_base.py` | 14 | Labels, agent display, comment formatting |
+| `test_config.py` | 14 | Git config, Docker config, env vars |
+| `test_providers.py` | 6 | Provider auto-detection (GitLab vs GitHub) |
+
+## Rate limits for live testing
+
+| Plan | Messages/5h | Recommended cycles/day | Agents per cycle |
+|------|-------------|----------------------|-----------------|
+| **Pro** ($20/mo) | ~45 | 3-4 | 3 (minimal) |
+| **Max** ($100/mo) | ~225 | 15-20 | 6-9 (full team) |
+
+## Quick live test
+
 ```bash
-cd /path/to/ai-team
-python scripts/init_project.py "Test Project" "A test project to validate the concept"
-```
+# Dry run — shows what would be sent to Claude, without calling it
+opensepia run po --dry-run
 
-## Rate Limits
+# Single agent — cheapest real test (1 Claude call)
+opensepia run po
 
-| Metric | Pro ($20) | Max ($100) |
-|--------|-----------|------------|
-| Messages/5h | ~45 | ~225 |
-| Recommended cycles/day | 3-4 | 15-20 |
-| Agents per cycle | 3 (minimal) | 6-9 (full team) |
-
-## Test Scenarios
-
-### 1. Single Agent (smallest test)
-```bash
-# Run just the Product Owner
-./scripts/orchestrator_cli.sh po
-
-# Check output
-cat board/backlog.md
-cat board/inbox/pm.md
-```
-
-### 2. Minimal Team (3 agents)
-```bash
-# PO → Dev1 → Tester
-./scripts/orchestrator_cli.sh minimal
-
-# Check results
-cat board/sprint.md
-ls workspace/src/
-```
-
-### 3. Full Dev Team (6 agents)
-```bash
-# All core agents (recommended for Max plan)
-./scripts/orchestrator_cli.sh dev-team
-```
-
-### 4. Full Team with Security (9 agents)
-```bash
-# Everyone — only with Max plan
-./scripts/orchestrator_cli.sh all
-```
-
-## Recommended Test Plan
-
-### Day 1: Validate the concept
-```bash
-# Morning — initialize project
-python scripts/init_project.py "MyProject" "Project description"
-
-# Test 1: PO defines the backlog
-./scripts/orchestrator_cli.sh po
-cat board/backlog.md
-
-# Test 2: Minimal cycle
-./scripts/orchestrator_cli.sh minimal
-```
-
-### Day 2: Multiple cycles
-```bash
-# 3-4 minimal cycles throughout the day
-./scripts/orchestrator_cli.sh minimal  # morning
-./scripts/orchestrator_cli.sh minimal  # afternoon
-./scripts/orchestrator_cli.sh minimal  # evening
-
-# Track progress
-cat board/sprint.md
-```
-
-### Day 3: Evaluate
-```bash
-# What got done?
-cat board/sprint.md | grep "DONE"
-
-# What code was generated?
-find workspace/src -name "*.py" | head -20
-
-# Is agent communication working?
-cat board/inbox/*.md
-```
-
-## Cron for Automated Cycles
-
-For Pro plan — max 3-4 cycles/day:
-```bash
-# Every 6 hours, work hours only
-0 8,14,20 * * * /path/to/ai-team/scripts/orchestrator_cli.sh minimal >> /path/to/ai-team/logs/cron.log 2>&1
-```
-
-For Max plan — you can run more:
-```bash
-# Every 2 hours
-0 */2 8-22 * * * /path/to/ai-team/scripts/orchestrator_cli.sh dev-team >> /path/to/ai-team/logs/cron.log 2>&1
-```
-
-## Troubleshooting
-
-### "Rate limit reached"
-```bash
-# Wait for reset (~5 hours) or:
-# - Use minimal mode (3 agents instead of 6-9)
-# - Reduce cycle frequency
-```
-
-### Claude Code not logged in
-```bash
-claude login
-# Follow browser instructions
-```
-
-### Agents produce poor results
-```bash
-# Check their inbox — they might lack context
-cat board/inbox/dev1.md
-
-# Check project.md — is it descriptive enough?
-cat board/project.md
+# Minimal team — 3 agents
+opensepia run minimal
 ```

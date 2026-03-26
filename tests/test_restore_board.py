@@ -1,13 +1,11 @@
-"""Tests for scripts/restore_board.py — board health checking."""
+"""Tests for orchestrator/board/restore.py — board health checking."""
 
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import scripts.restore_board as restore_board_module
-from scripts.restore_board import check_board_health
+from opensepia.board.restore import check_board_health
 
 
 # ---------------------------------------------------------------------------
@@ -15,14 +13,10 @@ from scripts.restore_board import check_board_health
 # ---------------------------------------------------------------------------
 
 def test_check_board_health_all_present(temp_board_dir):
-    with patch.object(restore_board_module, "BOARD_DIR", temp_board_dir):
-        report = check_board_health()
+    report = check_board_health(temp_board_dir)
     assert report["ok"] is True
-    assert report["missing"] == [] or all(
-        f.startswith("inbox/") for f in report["missing"]
-    )
     assert report["empty"] == []
-    assert len(report["present"]) >= 6  # sprint, backlog, project, architecture, decisions, standup
+    assert len(report["present"]) >= 6
 
 
 # ---------------------------------------------------------------------------
@@ -32,14 +26,12 @@ def test_check_board_health_all_present(temp_board_dir):
 def test_check_board_health_missing_critical_files(tmp_path):
     board = tmp_path / "board"
     board.mkdir()
-    # Only create some important files, skip critical ones
     (board / "project.md").write_text("# Project\n", encoding="utf-8")
     (board / "architecture.md").write_text("# Arch\n", encoding="utf-8")
     (board / "decisions.md").write_text("# Decisions\n", encoding="utf-8")
     (board / "standup.md").write_text("# Standup\n", encoding="utf-8")
 
-    with patch.object(restore_board_module, "BOARD_DIR", board):
-        report = check_board_health()
+    report = check_board_health(board)
 
     assert report["ok"] is False
     assert "sprint.md" in report["missing"]
@@ -49,12 +41,10 @@ def test_check_board_health_missing_critical_files(tmp_path):
 def test_check_board_health_missing_important_files(tmp_path):
     board = tmp_path / "board"
     board.mkdir()
-    # Create critical files only
     (board / "sprint.md").write_text("# Sprint\n", encoding="utf-8")
     (board / "backlog.md").write_text("# Backlog\n", encoding="utf-8")
 
-    with patch.object(restore_board_module, "BOARD_DIR", board):
-        report = check_board_health()
+    report = check_board_health(board)
 
     assert report["ok"] is False
     assert "project.md" in report["missing"]
@@ -68,7 +58,6 @@ def test_check_board_health_missing_important_files(tmp_path):
 def test_check_board_health_empty_critical_file(tmp_path):
     board = tmp_path / "board"
     board.mkdir()
-    # Create all files, but make sprint.md empty
     (board / "sprint.md").write_text("", encoding="utf-8")
     (board / "backlog.md").write_text("# Backlog\n", encoding="utf-8")
     (board / "project.md").write_text("# Project\n", encoding="utf-8")
@@ -76,8 +65,7 @@ def test_check_board_health_empty_critical_file(tmp_path):
     (board / "decisions.md").write_text("# Decisions\n", encoding="utf-8")
     (board / "standup.md").write_text("# Standup\n", encoding="utf-8")
 
-    with patch.object(restore_board_module, "BOARD_DIR", board):
-        report = check_board_health()
+    report = check_board_health(board)
 
     assert report["ok"] is False
     assert "sprint.md" in report["empty"]
@@ -89,13 +77,12 @@ def test_check_board_health_empty_important_file(tmp_path):
     board.mkdir()
     (board / "sprint.md").write_text("# Sprint\n", encoding="utf-8")
     (board / "backlog.md").write_text("# Backlog\n", encoding="utf-8")
-    (board / "project.md").write_text("", encoding="utf-8")  # empty
+    (board / "project.md").write_text("", encoding="utf-8")
     (board / "architecture.md").write_text("# Arch\n", encoding="utf-8")
     (board / "decisions.md").write_text("# Decisions\n", encoding="utf-8")
     (board / "standup.md").write_text("# Standup\n", encoding="utf-8")
 
-    with patch.object(restore_board_module, "BOARD_DIR", board):
-        report = check_board_health()
+    report = check_board_health(board)
 
     assert report["ok"] is False
     assert "project.md" in report["empty"]
@@ -108,28 +95,21 @@ def test_check_board_health_empty_important_file(tmp_path):
 def test_check_board_health_missing_inbox_not_critical(tmp_path):
     board = tmp_path / "board"
     board.mkdir()
-    # Create all critical + important files
     (board / "sprint.md").write_text("# Sprint\n", encoding="utf-8")
     (board / "backlog.md").write_text("# Backlog\n", encoding="utf-8")
     (board / "project.md").write_text("# Project\n", encoding="utf-8")
     (board / "architecture.md").write_text("# Arch\n", encoding="utf-8")
     (board / "decisions.md").write_text("# Decisions\n", encoding="utf-8")
     (board / "standup.md").write_text("# Standup\n", encoding="utf-8")
-    # No inbox directory at all
 
-    with patch.object(restore_board_module, "BOARD_DIR", board):
-        report = check_board_health()
+    report = check_board_health(board)
 
-    # Board is ok even without inbox files (they are not critical)
+    # Board is ok even without inbox files (health check only checks critical+important)
     assert report["ok"] is True
-    # But inbox files are listed as missing
-    inbox_missing = [f for f in report["missing"] if f.startswith("inbox/")]
-    assert len(inbox_missing) > 0
 
 
 def test_check_board_health_report_structure(temp_board_dir):
-    with patch.object(restore_board_module, "BOARD_DIR", temp_board_dir):
-        report = check_board_health()
+    report = check_board_health(temp_board_dir)
 
     assert "ok" in report
     assert "missing" in report

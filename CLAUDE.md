@@ -2,59 +2,80 @@
 
 ## What This Is
 
-Autonomous AI development team framework. 9 Claude-powered agents work as an agile team: plan sprints, write code, review, test, handle security, deploy. Orchestrated by cron, communicates via Markdown files.
+Autonomous AI development team framework. 9 Claude-powered agents work as an agile team: plan sprints, write code, review, test, handle security, deploy. Runs as a background daemon, communicates via Markdown files.
 
 ## Project Structure
 
-- `config/agents.yaml` — Agent definitions and system prompts (9 agents)
-- `config/project.yaml` — Sprint counter, project description, tech stack
-- `config/.env` — Tokens and credentials (gitignored, see .env.example)
-- `scripts/orchestrator_cli.sh` — Main orchestrator (bash), runs agents sequentially
-- `scripts/run_agent_cli.py` — Agent runner, builds context and calls `claude --print`
-- `scripts/sync_board.py` — Syncs board/backlog.md + sprint.md → GitLab/GitHub issues
-- `scripts/sync_comments.py` — Syncs agent messages → issue comments
-- `scripts/restore_board.py` — Board health check and restore from snapshot/provider
-- `scripts/merge_approved_mrs.py` — Auto-merges approved MRs/PRs
-- `integrations/base.py` — BoardProvider ABC (shared interface for GitLab/GitHub)
-- `integrations/providers/gitlab.py` — GitLab API v4 implementation
-- `integrations/providers/github.py` — GitHub REST API implementation
-- `integrations/git_client.py` — Git operations (branch, commit, push)
-- `integrations/docker_client.py` — Docker/docker-compose operations
-- `integrations/logging_config.py` — Shared logging + env loader
+```
+opensepia/                  # App source code (single package)
+  cli.py                    # Command router (entry point)
+  config.py                 # Config loading + mode resolution
+  errors.py                 # Error hierarchy
+  pipeline.py               # Step protocol + Pipeline runner
+  daemon.py                 # Background daemon
+  agents/                   # Agent execution
+    context.py, invoker.py, parser.py, writer.py, workspace.py
+  board/                    # Board management
+    sync.py, comments.py, restore.py, merge.py
+  steps/                    # Pipeline steps (11 steps)
+  integrations/             # Provider APIs (GitLab, GitHub, git, docker)
+
+config/                     # Tool configuration
+  agents.yaml               # Agent definitions, modes, execution params
+  .env                      # Credentials (gitignored)
+
+project/                    # The product being built (swappable, separate repo)
+  project.yaml              # Project name, tech stack, sprint state
+  board/                    # Agent progress (sprint.md, backlog.md, inbox/)
+  workspace/                # Code the agents write
+  logs/                     # Cycle logs
+
+tests/                      # Test suite
+bin/opensepia               # CLI entry point
+```
+
+The `project/` folder is the product OpenSepia is working on. It can be swapped out for a different project — just point to a different folder with the same structure (board/, workspace/, project.yaml).
 
 ## Key Conventions
 
-- Board state lives in `board/*.md` files (sprint.md, backlog.md, etc.)
-- Agents communicate via `board/inbox/{agent_id}.md`
+- Board state lives in `project/board/*.md`
+- Agents communicate via `project/board/inbox/{agent_id}.md`
 - Story IDs: `STORY-XXX`, Bug IDs: `BUG-XXX`
 - Status flow: TODO → IN_PROGRESS → REVIEW → TESTING → DONE
-- Labels on GitLab/GitHub: `status::todo`, `priority::high`, etc.
-- Provider auto-detection: GitLab if GITLAB_URL+GITLAB_TOKEN set, GitHub if GITHUB_TOKEN+GITHUB_REPO set
+- Modes and execution params defined in `config/agents.yaml`
 
 ## Running
 
 ```bash
-# Initialize project
-python3 scripts/init_project.py "Name" "Description"
+opensepia help                   # Show all commands
+opensepia init "Name" "Desc"     # Initialize a new project
+opensepia start                  # Start background daemon
+opensepia status                 # Check status
+opensepia logs -f                # Follow live logs
+opensepia stop                   # Stop daemon
+opensepia run dev-team           # Single cycle
+opensepia run po --dry-run       # Preview without calling Claude
+opensepia monitor                # View cycle statistics
+opensepia config                 # Show editable configuration
+opensepia reset                  # Reset project state
+python3 -m pytest tests/ -v      # Run tests
+```
 
-# Run one cycle (all core agents)
-./scripts/orchestrator_cli.sh dev-team
+## Architecture
 
-# Run single agent
-./scripts/orchestrator_cli.sh dev1
+Pipeline pattern — each step implements a `Step` protocol:
 
-# Run tests
-python3 -m pytest tests/ -v
+```
+BoardHealth → SprintCheck → Snapshot → AgentRunner → SprintSync →
+StandupSync → MergeMRs → GitSync → BoardSync → CycleLog → Alerting
 ```
 
 ## Code Style
 
-- Python 3.10+ with modern type hints (list[str] not List[str])
-- Shared logging via `integrations/logging_config.py` — use `setup_logging("name")`
-- Shared env loading via `load_env()` from same module
-- No external dependencies beyond pyyaml (API calls use urllib)
+- Python 3.10+, no external deps beyond pyyaml
+- All imports use `opensepia.*` package paths
 - All provider integrations go through BoardProvider ABC
 
 ## Tests
 
-Tests in `tests/` — run with `python3 -m pytest tests/ -v`. No external API calls, all mocked.
+`python3 -m pytest tests/ -v` — 142 tests, no external API calls.
