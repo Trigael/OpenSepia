@@ -212,10 +212,22 @@ GITHUB_TOKEN=ghp_xxxxx
 GITHUB_OWNER=your-org
 GITHUB_REPO=your-repo
 
-# Git (for auto-push + MR creation)
+# Git — workspace is the git repo
 GIT_REPO_URL=https://gitlab.example.com/group/project.git
 GIT_TOKEN=glpat-xxxxx
 ```
+
+### Git Setup
+
+The workspace (`project/workspace/`) is itself the git repo:
+
+```bash
+cd project/workspace
+git init
+git remote add origin <your-repo-url>
+```
+
+Each cycle, the GitSyncStep creates a feature branch, commits changes, pushes, and creates a MR — all directly from the workspace. No separate repo clone needed.
 
 ---
 
@@ -240,10 +252,10 @@ OpenSepia/
 ├── project/                # The product being built (swappable)
 │   ├── project.yaml        # Project name, tech stack, sprint state
 │   ├── board/              # Agent progress (sprint.md, backlog.md, inbox/)
-│   ├── workspace/          # Code the agents write
+│   ├── workspace/          # Code the agents write (its own git repo)
 │   └── logs/               # Cycle logs
 │
-├── tests/                  # 142 tests
+├── tests/                  # 173 tests
 └── bin/opensepia           # CLI entry point
 ```
 

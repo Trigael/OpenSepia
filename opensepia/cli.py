@@ -525,11 +525,23 @@ def cmd_init(argv: list[str]) -> None:
     with open(project_file, "w", encoding="utf-8") as f:
         _yaml.dump(project_cfg, f, default_flow_style=False, allow_unicode=True)
 
+    # Create a .gitignore in workspace for common build artifacts
+    ws_gitignore = workspace_dir / ".gitignore"
+    if not ws_gitignore.exists():
+        ws_gitignore.write_text(
+            "__pycache__/\n*.pyc\nnode_modules/\n.venv/\nvenv/\n"
+            ".env\n.coverage\n*.egg-info/\ndist/\nbuild/\n",
+            encoding="utf-8",
+        )
+
     print(f"Project initialized!")
     print(f"  Board:     {board_dir}")
     print(f"  Workspace: {workspace_dir}")
     print()
-    print(f"Next: opensepia start")
+    print(f"Next steps:")
+    print(f"  opensepia start                    # run without git")
+    print(f"  # Or set up git for the workspace:")
+    print(f"  cd {workspace_dir} && git init && git remote add origin <repo-url>")
 
 
 # =============================================================================
