@@ -17,10 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from integrations.logging_config import load_env
 load_env()
 
-from integrations.providers.gitlab import (
-    GitLabProvider, GitLabConfig, _api_call,
-)
-from integrations.base import BOARD_LABELS, PRIORITY_LABELS
+from integrations.base import BoardProvider, BOARD_LABELS, PRIORITY_LABELS
+from integrations.providers import detect_provider
 
 from integrations.logging_config import setup_logging
 logger = setup_logging("sync_board")
@@ -199,19 +197,16 @@ def parse_sprint_statuses(sprint_path: Path) -> dict[str, str]:
     return statuses
 
 
-def sync_to_gitlab(items: list[dict[str, Any]], sprint_statuses: dict[str, str], provider: GitLabProvider) -> tuple[int, int]:
-    """Synchronize items to GitLab Issues."""
-    config = provider.config
-
+def sync_to_provider(items: list[dict[str, Any]], sprint_statuses: dict[str, str], provider: BoardProvider) -> tuple[int, int]:
+    """Synchronize items to provider issues (GitLab or GitHub)."""
     # Load existing issues
     all_issues = provider.list_issues(state="opened")
     closed_issues = provider.list_issues(state="closed")
     all_issues.extend(closed_issues)
 
     # Build map: story_id -> issue
-    issue_map = {}
+    issue_map: dict[str, dict] = {}
     for issue in all_issues:
-        # Extract story/bug ID from title: [STORY-001] or [BUG-001]
         match = re.search(r'\[((?:STORY|BUG)-\d+)\]', issue.get("title", ""))
         if match:
             issue_map[match.group(1)] = issue
@@ -235,7 +230,7 @@ def sync_to_gitlab(items: list[dict[str, Any]], sprint_statuses: dict[str, str],
         if item["is_bug"]:
             labels.append("type::bug")
 
-        title_prefix = "🐛 " if item["is_bug"] else ""
+        title_prefix = "\U0001f41b " if item["is_bug"] else ""
         full_title = f"{title_prefix}[{item_id}] {item['title']}"
 
         if item_id in issue_map:
@@ -244,29 +239,24 @@ def sync_to_gitlab(items: list[dict[str, Any]], sprint_statuses: dict[str, str],
             existing_labels = set(existing.get("labels", []))
             new_labels = set(labels)
 
-            # Check if labels changed
             old_status = existing_labels & all_status_labels
             new_status = new_labels & all_status_labels
 
             if old_status != new_status or not new_labels.issubset(existing_labels):
-                result = _api_call(
-                    config, "PUT", f"/issues/{existing['iid']}",
-                    data={"labels": ",".join(new_labels | (existing_labels - all_status_labels))},
-                )
+                merged_labels = list(new_labels | (existing_labels - all_status_labels))
+                result = provider.update_issue_labels(existing['iid'], merged_labels)
                 if "error" not in result:
                     updated += 1
                     logger.info(f"  Updated #{existing['iid']} {item_id}: {old_status} -> {new_status}")
 
             # Reopen if moved back from done
             if status != "done" and existing.get("state") == "closed":
-                _api_call(config, "PUT", f"/issues/{existing['iid']}",
-                          data={"state_event": "reopen"})
+                provider.reopen_issue(existing['iid'])
                 logger.info(f"  Reopened #{existing['iid']} {item_id}")
 
             # Close if done
             if status == "done" and existing.get("state") != "closed":
-                _api_call(config, "PUT", f"/issues/{existing['iid']}",
-                          data={"state_event": "close"})
+                provider.close_issue(existing['iid'])
                 logger.info(f"  Closed #{existing['iid']} {item_id}")
 
         else:
@@ -286,41 +276,35 @@ def sync_to_gitlab(items: list[dict[str, Any]], sprint_statuses: dict[str, str],
     backlog_ids = {item["id"] for item in items}
     for item_id, status in sprint_statuses.items():
         if item_id in backlog_ids:
-            continue  # already processed in main loop
+            continue
 
         if item_id not in issue_map:
-            logger.warning(f"  Sprint-only {item_id} ({status}): no GitLab issue, skipping")
+            logger.warning(f"  Sprint-only {item_id} ({status}): no provider issue, skipping")
             continue
 
         existing = issue_map[item_id]
         status_label = BOARD_LABELS.get(status, BOARD_LABELS["todo"])
         existing_labels = set(existing.get("labels", []))
         old_status = existing_labels & all_status_labels
-        new_status = {status_label}
+        new_status_set = {status_label}
 
-        if old_status != new_status:
-            new_labels = list((existing_labels - all_status_labels) | new_status)
-            result = _api_call(config, "PUT", f"/issues/{existing['iid']}",
-                               data={"labels": ",".join(new_labels)})
+        if old_status != new_status_set:
+            merged_labels = list((existing_labels - all_status_labels) | new_status_set)
+            result = provider.update_issue_labels(existing['iid'], merged_labels)
             if "error" not in result:
                 updated += 1
-                logger.info(f"  Updated sprint-only #{existing['iid']} {item_id}: {old_status} -> {new_status}")
+                logger.info(f"  Updated sprint-only #{existing['iid']} {item_id}: {old_status} -> {new_status_set}")
 
-        # Close if done
         if status == "done" and existing.get("state") != "closed":
-            _api_call(config, "PUT", f"/issues/{existing['iid']}",
-                      data={"state_event": "close"})
+            provider.close_issue(existing['iid'])
             logger.info(f"  Closed #{existing['iid']} {item_id}")
 
-        # Reopen if moved back from done
         if status != "done" and existing.get("state") == "closed":
-            _api_call(config, "PUT", f"/issues/{existing['iid']}",
-                      data={"state_event": "reopen"})
+            provider.reopen_issue(existing['iid'])
             logger.info(f"  Reopened #{existing['iid']} {item_id}")
 
     # Export story_id -> issue_iid map to cache file
     cache_map = {}
-    # Re-fetch issues so the map includes newly created ones
     all_fresh = provider.list_issues(state="opened")
     closed_fresh = provider.list_issues(state="closed")
     all_fresh.extend(closed_fresh)
@@ -330,7 +314,7 @@ def sync_to_gitlab(items: list[dict[str, Any]], sprint_statuses: dict[str, str],
             cache_map[match.group(1)] = issue["iid"]
 
     if cache_map:
-        cache_path = BOARD_DIR / ".gitlab_issue_map.json"
+        cache_path = BOARD_DIR / f".{provider.name}_issue_map.json"
         try:
             cache_path.write_text(json.dumps(cache_map, indent=2, ensure_ascii=False),
                                   encoding="utf-8")
@@ -341,14 +325,17 @@ def sync_to_gitlab(items: list[dict[str, Any]], sprint_statuses: dict[str, str],
     return created, updated
 
 
+# Backward compatibility alias
+sync_to_gitlab = sync_to_provider
+
+
 def main() -> None:
-    config = GitLabConfig()
-    if not config.is_configured:
-        logger.warning("GitLab is not configured (GITLAB_URL/TOKEN/PROJECT_ID), skipping sync")
+    provider = detect_provider()
+    if not provider or not provider.enabled:
+        logger.warning("No provider configured (GitLab or GitHub), skipping sync")
         return
 
-    provider = GitLabProvider(config)
-    logger.info("GitLab Board Sync...")
+    logger.info(f"{provider.name.capitalize()} Board Sync...")
 
     backlog_path = BOARD_DIR / "backlog.md"
     sprint_path = BOARD_DIR / "sprint.md"
@@ -367,7 +354,7 @@ def main() -> None:
         logger.info(f"  Sprint statuses: {sprint_statuses}")
 
     # Sync
-    created, updated = sync_to_gitlab(items, sprint_statuses, provider)
+    created, updated = sync_to_provider(items, sprint_statuses, provider)
     logger.info(f"  Done: {created} created, {updated} updated")
 
 

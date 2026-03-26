@@ -90,6 +90,16 @@ class BoardProvider(ABC):
         ...
 
     @abstractmethod
+    def reopen_issue(self, issue_id: Any) -> dict:
+        """Reopen a previously closed issue."""
+        ...
+
+    @abstractmethod
+    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict:
+        """Replace all labels on an issue."""
+        ...
+
+    @abstractmethod
     def update_issue_status(self, issue_id: Any, from_status: str,
                             to_status: str) -> dict:
         ...
@@ -166,6 +176,11 @@ class BoardProvider(ABC):
 
     @abstractmethod
     def get_mr_changes(self, mr_id: Any) -> dict:
+        ...
+
+    @abstractmethod
+    def get_mr_approvals(self, mr_id: Any) -> dict:
+        """Get MR/PR approval status. Must return dict with 'approved': bool."""
         ...
 
     # ----- Cache management -----

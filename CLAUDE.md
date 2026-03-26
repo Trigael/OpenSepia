@@ -6,21 +6,46 @@ Autonomous AI development team framework. 9 Claude-powered agents work as an agi
 
 ## Project Structure
 
-- `config/agents.yaml` — Agent definitions and system prompts (9 agents)
-- `config/project.yaml` — Sprint counter, project description, tech stack
-- `config/.env` — Tokens and credentials (gitignored, see .env.example)
-- `scripts/orchestrator_cli.sh` — Main orchestrator (bash), runs agents sequentially
-- `scripts/run_agent_cli.py` — Agent runner, builds context and calls `claude --print`
-- `scripts/sync_board.py` — Syncs board/backlog.md + sprint.md → GitLab/GitHub issues
+### Core Packages
+
+- `orchestrator/` — Pipeline-based orchestrator (replaces bash script)
+  - `cli.py` — argparse CLI, mode routing, entry point
+  - `config.py` — Centralized config loading (agents.yaml, project.yaml, .env)
+  - `errors.py` — Error hierarchy (ConfigError, AgentError, GitSyncError, etc.)
+  - `lockfile.py` — PID-based process lock management
+  - `pipeline.py` — Step protocol + Pipeline runner with error handling
+  - `steps/` — Individual pipeline steps (board_health, sprint_check, agent_runner, standup_sync, merge_mrs, git_sync, board_sync, logging_step, alerting)
+
+- `agent/` — Agent execution modules
+  - `context.py` — Build agent prompt from board state, workspace, inbox
+  - `invoker.py` — Call Claude Code CLI with retry logic
+  - `parser.py` — Parse `---FILES---` output format
+  - `writer.py` — Apply agent output to disk with security checks
+  - `workspace.py` — Directory tree listing for context
+
+### Scripts (thin wrappers / standalone tools)
+
+- `scripts/orchestrator_cli.sh` — Shim that delegates to `python -m orchestrator`
+- `scripts/run_agent_cli.py` — Agent runner CLI (imports from `agent/` package)
+- `scripts/sync_board.py` — Syncs board/backlog.md + sprint.md → provider issues
 - `scripts/sync_comments.py` — Syncs agent messages → issue comments
 - `scripts/restore_board.py` — Board health check and restore from snapshot/provider
 - `scripts/merge_approved_mrs.py` — Auto-merges approved MRs/PRs
+
+### Integrations
+
 - `integrations/base.py` — BoardProvider ABC (shared interface for GitLab/GitHub)
 - `integrations/providers/gitlab.py` — GitLab API v4 implementation
 - `integrations/providers/github.py` — GitHub REST API implementation
 - `integrations/git_client.py` — Git operations (branch, commit, push)
 - `integrations/docker_client.py` — Docker/docker-compose operations
 - `integrations/logging_config.py` — Shared logging + env loader
+
+### Configuration
+
+- `config/agents.yaml` — Agent definitions and system prompts (9 agents)
+- `config/project.yaml` — Sprint counter, project description, tech stack
+- `config/.env` — Tokens and credentials (gitignored, see .env.example)
 
 ## Key Conventions
 
@@ -37,15 +62,31 @@ Autonomous AI development team framework. 9 Claude-powered agents work as an agi
 # Initialize project
 python3 scripts/init_project.py "Name" "Description"
 
-# Run one cycle (all core agents)
+# Run one cycle (all core agents) — preferred
+python3 -m orchestrator dev-team
+
+# Alternative (via shim, backward compatible)
 ./scripts/orchestrator_cli.sh dev-team
 
 # Run single agent
-./scripts/orchestrator_cli.sh dev1
+python3 -m orchestrator po
+
+# Dry run (show context without calling Claude)
+python3 -m orchestrator dev-team --dry-run
 
 # Run tests
 python3 -m pytest tests/ -v
 ```
+
+## Architecture
+
+The orchestrator uses a pipeline pattern. Each step implements a `Step` protocol:
+
+```
+Pipeline: BoardHealth → SprintCheck → Snapshot → AgentRunner → SprintSync → StandupSync → MergeMRs → GitSync → BoardSync → CycleLog → Alerting
+```
+
+Non-critical steps log errors and continue. Critical steps (config, lock) abort the pipeline. All errors are collected in `PipelineContext.errors`.
 
 ## Code Style
 

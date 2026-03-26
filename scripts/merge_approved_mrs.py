@@ -13,7 +13,8 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from integrations.providers.gitlab import GitLabProvider, GitLabConfig, _api_call
+from integrations.base import BoardProvider
+from integrations.providers import detect_provider
 from integrations.logging_config import setup_logging
 
 logger = setup_logging("merge_approved_mrs")
@@ -47,7 +48,7 @@ def _parse_cycle_number(branch_name: str) -> int:
         return 0
 
 
-def merge_approved_mrs(client: GitLabProvider) -> tuple[int, int]:
+def merge_approved_mrs(client: BoardProvider) -> tuple[int, int]:
     """
     Merge approved MRs and close stale ones.
 
@@ -58,7 +59,7 @@ def merge_approved_mrs(client: GitLabProvider) -> tuple[int, int]:
         (merged_count, closed_count)
     """
     if not client.enabled:
-        logger.warning("GitLab is not configured — skipping auto-merge")
+        logger.warning("Provider is not configured — skipping auto-merge")
         return 0, 0
 
     mrs = client.list_mrs("opened")
@@ -95,9 +96,8 @@ def merge_approved_mrs(client: GitLabProvider) -> tuple[int, int]:
         created_at = _parse_gitlab_date(detail.get("created_at", ""))
         age = now - created_at
 
-        # Approvals: basic detail does not return approval data on free tier,
-        # we need to call /approvals endpoint separately
-        approvals = _api_call(client.config, "GET", f"/merge_requests/{iid}/approvals")
+        # Approvals: use provider's get_mr_approvals method
+        approvals = client.get_mr_approvals(iid)
         is_approved = approvals.get("approved", False)
 
         can_merge = merge_status in ("can_be_merged", "mergeable")
@@ -172,11 +172,13 @@ def merge_approved_mrs(client: GitLabProvider) -> tuple[int, int]:
 
 
 if __name__ == "__main__":
-    config = GitLabConfig()
-    if not config.is_configured:
-        print("GitLab is not configured (GITLAB_URL, GITLAB_TOKEN, GITLAB_PROJECT_ID)")
+    from integrations.logging_config import load_env
+    load_env()
+
+    client = detect_provider()
+    if not client or not client.enabled:
+        print("No provider configured (GitLab or GitHub)")
         sys.exit(1)
 
-    client = GitLabProvider(config)
     merged, closed = merge_approved_mrs(client)
     print(f"Done: {merged} MRs merged, {closed} MRs closed")

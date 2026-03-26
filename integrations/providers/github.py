@@ -185,6 +185,14 @@ class GitHubProvider(BoardProvider):
         return _api_call(self.config, "PATCH", f"/issues/{issue_id}",
                          data={"state": "closed"})
 
+    def reopen_issue(self, issue_id: Any) -> dict:
+        return _api_call(self.config, "PATCH", f"/issues/{issue_id}",
+                         data={"state": "open"})
+
+    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict:
+        return _api_call(self.config, "PATCH", f"/issues/{issue_id}",
+                         data={"labels": labels})
+
     def update_issue_status(self, issue_id: Any, from_status: str,
                             to_status: str) -> dict:
         # Load current labels
@@ -426,6 +434,14 @@ class GitHubProvider(BoardProvider):
 
     def get_mr_changes(self, mr_id: Any) -> dict:
         return _api_call(self.config, "GET", f"/pulls/{mr_id}/files")
+
+    def get_mr_approvals(self, mr_id: Any) -> dict:
+        """Get PR approval status from reviews."""
+        result = _api_call(self.config, "GET", f"/pulls/{mr_id}/reviews")
+        if isinstance(result, list):
+            approved = any(r.get("state") == "APPROVED" for r in result)
+            return {"approved": approved, "reviews": result}
+        return {"approved": False, "error": result.get("error", "unknown")}
 
     def get_open_mrs_md(self) -> str:
         mrs = self.list_mrs("opened")
