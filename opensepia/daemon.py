@@ -282,11 +282,9 @@ class OrchestratorDaemon:
             return "skipped", [str(e)]
 
         try:
-            from opensepia.board_adapter_markdown import MarkdownBoardAdapter
-            board_adapter = MarkdownBoardAdapter(
-                board_dir=config.board_dir,
-                workspace_dir=config.workspace_dir,
-                project_dir=config.project_dir,
+            from opensepia.board_adapter import create_board_adapter
+            board_adapter = create_board_adapter(
+                config.board_dir, config.workspace_dir, config.project_dir,
             )
 
             ctx = PipelineContext(

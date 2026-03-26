@@ -205,12 +205,10 @@ def cmd_run(argv: list[str]) -> None:
         sys.exit(0)
 
     try:
-        # Create board adapter
-        from opensepia.board_adapter_markdown import MarkdownBoardAdapter
-        board_adapter = MarkdownBoardAdapter(
-            board_dir=config.board_dir,
-            workspace_dir=config.workspace_dir,
-            project_dir=config.project_dir,
+        # Create board adapter (auto-selects based on BOARD_SERVER_URL)
+        from opensepia.board_adapter import create_board_adapter
+        board_adapter = create_board_adapter(
+            config.board_dir, config.workspace_dir, config.project_dir,
         )
 
         ctx = PipelineContext(

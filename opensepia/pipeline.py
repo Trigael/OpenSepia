@@ -45,8 +45,8 @@ class PipelineContext:
     dry_run: bool = False
     no_increment: bool = False
 
-    # Board adapter (set by caller — if None, steps use direct file ops)
-    board_adapter: BoardAdapter | None = None
+    # Board adapter (set by caller — required for agent execution)
+    board_adapter: BoardAdapter | None = None  # None only in tests that don't run agents
 
     # Cycle state for checkpointing (set by Pipeline.run)
     cycle_state: CycleState | None = None

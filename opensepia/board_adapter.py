@@ -10,6 +10,7 @@ Two implementations:
 - (future) BoardServerAdapter: calls the board server API
 """
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -64,3 +65,22 @@ class BoardAdapter(ABC):
     def ensure_board_ready(self) -> None:
         """Ensure the board is ready (create dirs, inbox files, etc.)."""
         ...
+
+
+def create_board_adapter(
+    board_dir: Path,
+    workspace_dir: Path,
+    project_dir: Path,
+) -> BoardAdapter:
+    """Auto-select adapter based on BOARD_SERVER_URL env var.
+
+    Returns BoardServerAdapter if BOARD_SERVER_URL is set and non-empty,
+    otherwise returns MarkdownBoardAdapter.
+    """
+    server_url = os.environ.get("BOARD_SERVER_URL", "").strip()
+    if server_url:
+        from opensepia.board_adapter_server import BoardServerAdapter
+        return BoardServerAdapter(server_url, workspace_dir, project_dir)
+    else:
+        from opensepia.board_adapter_markdown import MarkdownBoardAdapter
+        return MarkdownBoardAdapter(board_dir, workspace_dir, project_dir)
