@@ -5,7 +5,6 @@ Assembles the full prompt context for an agent from board state,
 workspace tree, inbox, provider comments, and communication rules.
 """
 
-import sys
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +26,6 @@ def build_agent_context(
     project_config: dict[str, Any],
     board_dir: Path,
     workspace_dir: Path,
-    base_dir: Path,
 ) -> str:
     """Build complete context for an agent.
 
@@ -78,7 +76,7 @@ def build_agent_context(
     system_prompt = agent["system_prompt"]
 
     # Provider comments (READ path)
-    provider_section = _fetch_provider_comments(board_dir, base_dir)
+    provider_section = _fetch_provider_comments(board_dir)
 
     # Communication rules
     comm_rules = agents_config["global"].get("communication_rules", "")
@@ -145,13 +143,12 @@ Rules:
     return context
 
 
-def _fetch_provider_comments(board_dir: Path, base_dir: Path) -> str:
+def _fetch_provider_comments(board_dir: Path) -> str:
     """Fetch recent provider comments for active stories.
 
     Returns formatted Markdown section or empty string on failure.
     """
     try:
-        sys.path.insert(0, str(base_dir))
         from opensepia.integrations.providers import detect_provider
         from opensepia.board.comments import get_active_story_ids, fetch_comments_for_context
 

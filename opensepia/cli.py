@@ -157,6 +157,7 @@ def cmd_run(argv: list[str]) -> None:
     try:
         ctx = PipelineContext(
             mode=mode,
+            tool_dir=config.tool_dir,
             project_dir=config.project_dir,
             agents_config=config.agents,
             project_config=config.project,

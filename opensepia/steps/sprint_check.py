@@ -105,7 +105,7 @@ class SprintCheckStep:
 
     def _save_project(self, ctx: PipelineContext) -> None:
         """Write project.yaml to disk."""
-        with open(ctx.config_dir / "project.yaml", "w") as f:
+        with open(ctx.project_dir / "project.yaml", "w") as f:
             yaml.dump(ctx.project_config, f, default_flow_style=False, allow_unicode=True)
 
 
@@ -139,7 +139,7 @@ class SprintSyncStep:
 
             ctx.project_config["sprint"] = sprint_cfg
             ctx.sprint_num = board_sprint
-            with open(ctx.config_dir / "project.yaml", "w") as f:
+            with open(ctx.project_dir / "project.yaml", "w") as f:
                 yaml.dump(ctx.project_config, f, default_flow_style=False, allow_unicode=True)
 
         return ctx

@@ -17,13 +17,14 @@ def _make_ctx(**kwargs) -> PipelineContext:
     """Create a minimal PipelineContext for testing."""
     defaults = dict(
         mode="test",
-        project_dir=Path("/tmp/test"),
+        tool_dir=Path("/tmp/test"),
+        project_dir=Path("/tmp/test/project"),
         agents_config={"agents": {}, "global": {}},
         project_config={"sprint": {"current_sprint": 1, "current_cycle": 0}},
-        board_dir=Path("/tmp/test/board"),
-        workspace_dir=Path("/tmp/test/workspace"),
+        board_dir=Path("/tmp/test/project/board"),
+        workspace_dir=Path("/tmp/test/project/workspace"),
         config_dir=Path("/tmp/test/config"),
-        logs_dir=Path("/tmp/test/logs/runs"),
+        logs_dir=Path("/tmp/test/project/logs/runs"),
     )
     defaults.update(kwargs)
     return PipelineContext(**defaults)

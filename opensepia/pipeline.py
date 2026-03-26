@@ -23,7 +23,8 @@ class PipelineContext:
     subsequent steps to react to earlier results.
     """
     mode: str
-    project_dir: Path
+    tool_dir: Path         # OpenSepia tool root
+    project_dir: Path      # Product project root (board/, workspace/, project.yaml)
     agents_config: dict[str, Any]
     project_config: dict[str, Any]
     board_dir: Path

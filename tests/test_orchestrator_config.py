@@ -33,7 +33,7 @@ def test_config_sprint_properties():
 
 def test_config_raises_on_missing_dir():
     with pytest.raises(ConfigError, match="Missing agents config"):
-        OrchestratorConfig.load(project_dir=Path("/nonexistent/path"))
+        OrchestratorConfig.load(tool_dir=Path("/nonexistent/path"))
 
 
 # ---------------------------------------------------------------------------

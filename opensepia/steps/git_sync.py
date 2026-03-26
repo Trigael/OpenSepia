@@ -33,7 +33,7 @@ class GitSyncStep:
             return ctx
 
         repo_url = os.environ.get("GIT_REPO_URL", "")
-        repo_path = Path(os.environ.get("GIT_REPO_PATH", str(ctx.project_dir / "repo")))
+        repo_path = Path(os.environ.get("GIT_REPO_PATH", str(ctx.tool_dir / "repo")))
         git_token = os.environ.get("GIT_TOKEN", "")
 
         if not repo_url or not (repo_path / ".git").exists():

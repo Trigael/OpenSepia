@@ -36,14 +36,14 @@ class OrchestratorDaemon:
         mode: str = "dev-team",
         pause: int = 60,
         verbose: bool = False,
-        project_dir: Path | None = None,
+        tool_dir: Path | None = None,
     ):
         self.mode = mode
         self.pause = pause
         self.verbose = verbose
-        self.project_dir = project_dir or Path(__file__).parent.parent
-        self.state_path = self.project_dir / DAEMON_STATE_FILE
-        self.log_path = self.project_dir / "logs" / "daemon.log"
+        self.tool_dir = tool_dir or Path(__file__).parent.parent
+        self.state_path = self.tool_dir / DAEMON_STATE_FILE
+        self.log_path = self.tool_dir / "logs" / "daemon.log"
         self._stopping = False
         self._paused = False
         self._state = DaemonState(mode=mode, pause_seconds=pause)
@@ -79,7 +79,7 @@ class OrchestratorDaemon:
 
         # Grandchild: the actual daemon
         os.umask(0o22)
-        os.chdir(str(self.project_dir))
+        os.chdir(str(self.tool_dir))
 
         # Redirect stdio
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -208,7 +208,7 @@ class OrchestratorDaemon:
         from opensepia.cli import build_pipeline
 
         try:
-            config = OrchestratorConfig.load(self.project_dir)
+            config = OrchestratorConfig.load(self.tool_dir)
             agent_ids = config.resolve_agent_ids(self.mode)
         except ConfigError as e:
             logger.error("Config error: %s", e)
@@ -225,6 +225,7 @@ class OrchestratorDaemon:
         try:
             ctx = PipelineContext(
                 mode=self.mode,
+                tool_dir=config.tool_dir,
                 project_dir=config.project_dir,
                 agents_config=config.agents,
                 project_config=config.project,
@@ -294,10 +295,10 @@ class OrchestratorDaemon:
             time.sleep(1)
 
 
-def stop_daemon(project_dir: Path | None = None) -> bool:
+def stop_daemon(tool_dir: Path | None = None) -> bool:
     """Send SIGTERM to running daemon. Returns True if stopped."""
-    project_dir = project_dir or Path(__file__).parent.parent
-    state_path = project_dir / DAEMON_STATE_FILE
+    tool_dir = tool_dir or Path(__file__).parent.parent
+    state_path = tool_dir / DAEMON_STATE_FILE
     state = DaemonState.load(state_path)
 
     if not state.is_process_alive():
@@ -324,10 +325,10 @@ def stop_daemon(project_dir: Path | None = None) -> bool:
     return True
 
 
-def send_pause_signal(project_dir: Path | None = None) -> str:
+def send_pause_signal(tool_dir: Path | None = None) -> str:
     """Send SIGUSR1 to toggle pause/resume. Returns new status."""
-    project_dir = project_dir or Path(__file__).parent.parent
-    state_path = project_dir / DAEMON_STATE_FILE
+    tool_dir = tool_dir or Path(__file__).parent.parent
+    state_path = tool_dir / DAEMON_STATE_FILE
     state = DaemonState.load(state_path)
 
     if not state.is_process_alive():
@@ -341,10 +342,10 @@ def send_pause_signal(project_dir: Path | None = None) -> str:
     return new_state.status
 
 
-def get_daemon_status(project_dir: Path | None = None) -> DaemonState:
+def get_daemon_status(tool_dir: Path | None = None) -> DaemonState:
     """Load and validate daemon state. Cleans up stale state."""
-    project_dir = project_dir or Path(__file__).parent.parent
-    state_path = project_dir / DAEMON_STATE_FILE
+    tool_dir = tool_dir or Path(__file__).parent.parent
+    state_path = tool_dir / DAEMON_STATE_FILE
     state = DaemonState.load(state_path)
 
     # Clean up stale state

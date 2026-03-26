@@ -1,8 +1,8 @@
 """
 AI Dev Team — Centralized configuration loading.
 
-Loads agents.yaml, project.yaml, and .env in one place.
-All mode resolution and execution parameters are driven by YAML.
+Loads agents.yaml (tool config) and project.yaml (product config).
+Separates the OpenSepia tool root from the product project directory.
 """
 
 import yaml
@@ -23,21 +23,41 @@ DEFAULT_EXECUTION = {
 
 @dataclass
 class OrchestratorConfig:
-    """Centralized configuration loaded once at startup."""
-    project_dir: Path
+    """Centralized configuration loaded once at startup.
+
+    Two directory roots:
+    - tool_dir: OpenSepia tool root (where opensepia/ package lives)
+    - project_dir: Product being worked on (board/, workspace/, project.yaml)
+    """
+    tool_dir: Path        # OpenSepia root (contains opensepia/, config/, tests/)
+    project_dir: Path     # Product root (contains board/, workspace/, project.yaml)
     agents: dict[str, Any]
     project: dict[str, Any]
-    board_dir: Path
-    workspace_dir: Path
-    config_dir: Path
-    logs_dir: Path
+
+    @property
+    def config_dir(self) -> Path:
+        """Tool config directory (agents.yaml, .env)."""
+        return self.tool_dir / "config"
+
+    @property
+    def board_dir(self) -> Path:
+        return self.project_dir / "board"
+
+    @property
+    def workspace_dir(self) -> Path:
+        return self.project_dir / "workspace"
+
+    @property
+    def logs_dir(self) -> Path:
+        return self.project_dir / "logs" / "runs"
 
     @classmethod
-    def load(cls, project_dir: Path | None = None) -> "OrchestratorConfig":
+    def load(cls, tool_dir: Path | None = None, project_dir: Path | None = None) -> "OrchestratorConfig":
         """Load all configuration files.
 
         Args:
-            project_dir: Project root. Defaults to two levels up from this file.
+            tool_dir: OpenSepia tool root. Defaults to two levels up from this file.
+            project_dir: Product project root. Defaults to tool_dir/project/.
 
         Returns:
             Populated OrchestratorConfig instance.
@@ -45,13 +65,13 @@ class OrchestratorConfig:
         Raises:
             ConfigError: If required config files are missing or invalid.
         """
-        if project_dir is None:
-            project_dir = Path(__file__).parent.parent
+        if tool_dir is None:
+            tool_dir = Path(__file__).parent.parent
 
-        config_dir = project_dir / "config"
-        board_dir = project_dir / "board"
-        workspace_dir = project_dir / "workspace"
-        logs_dir = project_dir / "logs" / "runs"
+        if project_dir is None:
+            project_dir = tool_dir / "project"
+
+        config_dir = tool_dir / "config"
 
         # Load .env
         env_file = config_dir / ".env"
@@ -63,7 +83,7 @@ class OrchestratorConfig:
                     key, value = line.split("=", 1)
                     os.environ[key.strip()] = value.strip()
 
-        # Load agents.yaml
+        # Load agents.yaml (tool config)
         agents_file = config_dir / "agents.yaml"
         if not agents_file.exists():
             raise ConfigError(f"Missing agents config: {agents_file}")
@@ -76,8 +96,8 @@ class OrchestratorConfig:
         if not agents or "agents" not in agents:
             raise ConfigError("agents.yaml must contain an 'agents' key")
 
-        # Load project.yaml
-        project_file = config_dir / "project.yaml"
+        # Load project.yaml (product config — inside project_dir)
+        project_file = project_dir / "project.yaml"
         if not project_file.exists():
             raise ConfigError(f"Missing project config: {project_file}")
         try:
@@ -87,18 +107,14 @@ class OrchestratorConfig:
             raise ConfigError(f"Invalid project.yaml: {e}") from e
 
         return cls(
+            tool_dir=tool_dir,
             project_dir=project_dir,
             agents=agents,
             project=project,
-            board_dir=board_dir,
-            workspace_dir=workspace_dir,
-            config_dir=config_dir,
-            logs_dir=logs_dir,
         )
 
     @property
     def sprint_cfg(self) -> dict[str, Any]:
-        """Shortcut to sprint configuration."""
         return self.project.get("sprint", {})
 
     @property
@@ -111,17 +127,15 @@ class OrchestratorConfig:
 
     def save_project(self) -> None:
         """Write project.yaml back to disk."""
-        with open(self.config_dir / "project.yaml", "w") as f:
+        with open(self.project_dir / "project.yaml", "w") as f:
             yaml.dump(self.project, f, default_flow_style=False, allow_unicode=True)
 
     # ----- Agent & Mode Resolution -----
 
     def get_all_agent_ids(self) -> list[str]:
-        """All agent IDs defined in agents.yaml."""
         return list(self.agents.get("agents", {}).keys())
 
     def get_default_mode(self) -> str:
-        """Mode marked as default in YAML, or 'dev-team'."""
         modes = self.agents.get("modes", {})
         for name, defn in modes.items():
             if defn.get("default"):
@@ -129,7 +143,6 @@ class OrchestratorConfig:
         return "dev-team"
 
     def get_all_mode_names(self) -> set[str]:
-        """All valid mode names, aliases, and single agent names."""
         names: set[str] = set()
         modes = self.agents.get("modes", {})
         for name, defn in modes.items():
@@ -140,7 +153,6 @@ class OrchestratorConfig:
         return names
 
     def _build_alias_map(self) -> dict[str, str]:
-        """Build alias -> canonical mode name mapping from YAML."""
         alias_map: dict[str, str] = {}
         modes = self.agents.get("modes", {})
         for name, defn in modes.items():
@@ -150,24 +162,10 @@ class OrchestratorConfig:
         return alias_map
 
     def resolve_agent_ids(self, mode: str) -> list[str]:
-        """Resolve mode name (or alias or agent name) to agent ID list.
-
-        Reads from the 'modes' section in agents.yaml. Falls back to
-        legacy 'global.*_order' keys for backward compatibility.
-
-        Args:
-            mode: Mode name, alias, or single agent name.
-
-        Returns:
-            Ordered list of agent IDs to run.
-
-        Raises:
-            ConfigError: If mode is unknown or references undefined agents.
-        """
+        """Resolve mode name to agent ID list."""
         modes_cfg = self.agents.get("modes", {})
         known_agents = set(self.agents.get("agents", {}).keys())
 
-        # Try modes section first (with alias resolution)
         if modes_cfg:
             alias_map = self._build_alias_map()
             canonical = alias_map.get(mode)
@@ -176,33 +174,24 @@ class OrchestratorConfig:
                 self._validate_agent_ids(ids, mode, known_agents)
                 return ids
 
-        # Single agent name
         if mode in known_agents:
             return [mode]
 
-        # Legacy fallback: global.*_order keys
         ids = self._resolve_legacy_mode(mode)
         if ids is not None:
             self._validate_agent_ids(ids, mode, known_agents)
             return ids
 
-        # Nothing matched
         valid = sorted(self.get_all_mode_names())
-        raise ConfigError(
-            f"Unknown mode '{mode}'. Valid: {', '.join(valid)}"
-        )
+        raise ConfigError(f"Unknown mode '{mode}'. Valid: {', '.join(valid)}")
 
     def _resolve_legacy_mode(self, mode: str) -> list[str] | None:
-        """Fallback: resolve mode from legacy global.*_order keys."""
         global_cfg = self.agents.get("global", {})
         legacy_map = {
             "all": "execution_order",
-            "dev-team": "dev_team_order",
-            "dev": "dev_team_order",
-            "minimal": "minimal_order",
-            "min": "minimal_order",
-            "security": "security_order",
-            "sec": "security_order",
+            "dev-team": "dev_team_order", "dev": "dev_team_order",
+            "minimal": "minimal_order", "min": "minimal_order",
+            "security": "security_order", "sec": "security_order",
         }
         key = legacy_map.get(mode)
         if key and key in global_cfg:
@@ -210,24 +199,13 @@ class OrchestratorConfig:
         return None
 
     def _validate_agent_ids(self, ids: list[str], mode: str, known: set[str]) -> None:
-        """Raise ConfigError if any agent ID is undefined."""
         for aid in ids:
             if aid not in known:
-                raise ConfigError(
-                    f"Agent '{aid}' referenced in mode '{mode}' not found in agents.yaml"
-                )
+                raise ConfigError(f"Agent '{aid}' in mode '{mode}' not found in agents.yaml")
 
     # ----- Execution Parameters -----
 
     def get_execution_params(self, agent_id: str | None = None) -> dict[str, Any]:
-        """Get execution parameters, optionally merged with per-agent overrides.
-
-        Args:
-            agent_id: If provided, merge agent-specific overrides.
-
-        Returns:
-            Dict with keys: timeout, max_retries, retry_delay, pause_between_agents
-        """
         exec_cfg = self.agents.get("execution", {})
         params = {
             "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
@@ -244,6 +222,5 @@ class OrchestratorConfig:
         return params
 
     def get_mode_descriptions(self) -> dict[str, str]:
-        """Get mode name -> description mapping for help text."""
         modes = self.agents.get("modes", {})
         return {name: defn.get("description", "") for name, defn in modes.items()}

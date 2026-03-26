@@ -152,7 +152,7 @@ class AgentRunnerStep:
             try:
                 context = build_agent_context(
                     agent_id, ctx.agents_config, ctx.project_config,
-                    ctx.board_dir, ctx.workspace_dir, ctx.project_dir,
+                    ctx.board_dir, ctx.workspace_dir,
                 )
 
                 agent_result = invoke_agent(
