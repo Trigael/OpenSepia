@@ -6,7 +6,7 @@ limits:
 project:
   description: Describe your project here. The more detail you provide, the better
     the agents will understand what to build.
-  name: My Project
+  name: My Cool API
   paths:
     archive: board/archive
     board: board

@@ -28,6 +28,23 @@ modes:
     aliases: [sec]
 
 # =============================================================================
+# PIPELINE STEPS — which steps run and in what order
+# Comment out or remove steps to disable them.
+# =============================================================================
+pipeline:
+  - board_health          # Check/restore board files
+  - sprint_check          # Increment cycle, detect sprint end
+  - snapshot              # Backup board before agents run
+  - agent_runner          # Run agents (the main work)
+  - sprint_sync           # Sync sprint number back to project.yaml
+  - standup_sync          # Post standup to provider
+  - merge_mrs             # Auto-merge approved MRs
+  - git_sync              # Commit + push workspace, create MR
+  - board_sync            # Sync board to provider issues
+  - cycle_log             # Write JSON cycle log
+  - alerting              # Alert on failures
+
+# =============================================================================
 # EXECUTION PARAMETERS — controls agent runtime behavior
 # =============================================================================
 execution:

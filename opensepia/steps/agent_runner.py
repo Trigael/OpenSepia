@@ -15,15 +15,12 @@ from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.agents.context import build_agent_context
 from opensepia.agents.invoker import invoke_agent
-from opensepia.config import DEFAULT_EXECUTION
+from opensepia.config import DEFAULT_EXECUTION, MAX_STANDUP_CHARS, MAX_INBOX_CHARS
 from opensepia.agents.writer import (
     apply_output, read_file_safe, write_file, archive_inbox,
 )
 
 logger = logging.getLogger(__name__)
-
-MAX_STANDUP_CHARS = 2000
-MAX_INBOX_CHARS = 1500
 
 
 def initialize_standup_file(board_dir: Path, sprint_num: int, cycle: int) -> None:
@@ -74,10 +71,16 @@ class AgentRunnerStep:
             self._dry_run(ctx)
             return ctx
 
-        # Initialize standup
-        initialize_standup_file(ctx.board_dir, ctx.sprint_num, ctx.cycle_num)
+        # Initialize standup (only if not resuming mid-agent)
+        already_completed = set()
+        if ctx.cycle_state and ctx.cycle_state.completed_agents:
+            already_completed = set(ctx.cycle_state.completed_agents)
+            log.info(f"Resuming agents — {len(already_completed)} already done, {len(ctx.agent_ids) - len(already_completed)} remaining")
+        else:
+            initialize_standup_file(ctx.board_dir, ctx.sprint_num, ctx.cycle_num)
 
         standup_file = ctx.board_dir / "standup.md"
+        state_path = ctx.project_dir / "logs" / "cycle_state.json" if ctx.cycle_state else None
 
         log.info(f"AI Dev Team — Cycle {ctx.cycle_num}")
         log.detail(f"Mode: {ctx.mode}")
@@ -95,6 +98,11 @@ class AgentRunnerStep:
             agent_name = agent_cfg["name"]
             agent_color = agent_cfg["color"]
 
+            # Skip agents that already completed (on resume)
+            if aid in already_completed:
+                log.step_detail("agent_runner", f"Skipping {agent_name} (already done)")
+                continue
+
             log.progress(agent_name, i + 1, len(ctx.agent_ids), agent_color)
 
             start_time = time.time()
@@ -111,6 +119,10 @@ class AgentRunnerStep:
                 files_written = result_dict.get("files_written", 0)
                 log.agent_done(agent_name, files_written, elapsed)
 
+            # Checkpoint: mark agent as completed
+            if ctx.cycle_state and state_path:
+                ctx.cycle_state.mark_agent_complete(aid, state_path)
+
             # Pause between agents (skip after last agent)
             if pause_between > 0 and i < len(ctx.agent_ids) - 1:
                 time.sleep(pause_between)
@@ -118,15 +130,19 @@ class AgentRunnerStep:
         ctx.agent_results = results
         ctx.agents_ok = all(not r.get("error") for r in results)
 
-        # Print summary
+        # Cycle summary
         ok_count = sum(1 for r in results if not r.get("error"))
         err_count = sum(1 for r in results if r.get("error"))
-        # Cycle summary
         total_files = sum(r.get("files_written", 0) for r in results)
         total_ctx = sum(r.get("context_size", 0) for r in results)
         total_resp = sum(r.get("response_size", 0) for r in results)
 
-        log.success(f"Cycle {ctx.cycle_num} — {ok_count}/{len(ctx.agent_ids)} agents, {total_files} files written")
+        ran_count = len(results)
+        skipped = len(already_completed)
+        summary = f"Cycle {ctx.cycle_num} — {ok_count}/{ran_count} agents, {total_files} files"
+        if skipped:
+            summary += f" ({skipped} resumed)"
+        log.success(summary)
         if err_count:
             failed = [r["agent_name"] for r in results if r.get("error")]
             log.error(f"Failed: {', '.join(failed)}")

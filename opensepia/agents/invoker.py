@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from opensepia import log
+
 logger = logging.getLogger(__name__)
 
 AGENT_TIMEOUT_SECONDS = 900
@@ -59,7 +61,7 @@ def call_claude_code(
     ]
 
     if verbose:
-        print("    Calling Claude Code CLI...")
+        log.detail("Calling Claude Code CLI...")
 
     # Unset CLAUDECODE — otherwise claude CLI refuses to run ("nested session")
     env = os.environ.copy()
@@ -103,16 +105,16 @@ def invoke_agent(
         AgentResult with response or error.
     """
     if verbose:
-        print(f"\n{'=' * 60}")
-        print(f"  {agent_name or agent_id}")
-        print(f"{'=' * 60}")
-        print(f"  Context: {len(context)} chars")
+        log.detail("=" * 60)
+        log.detail(f"{agent_name or agent_id}")
+        log.detail("=" * 60)
+        log.detail(f"Context: {len(context)} chars")
 
     try:
         response = call_claude_code(context, base_dir, timeout, verbose)
 
         if verbose:
-            print(f"  Response: {len(response)} chars")
+            log.detail(f"Response: {len(response)} chars")
 
         return AgentResult(
             agent_id=agent_id,

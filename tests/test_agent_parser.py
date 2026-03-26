@@ -1,10 +1,5 @@
 """Tests for agent/parser.py — output parsing."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from opensepia.agents.parser import parse_files_section, parse_standup_from_response, ParsedFile
 
 

@@ -12,11 +12,10 @@ from typing import Any
 
 from opensepia.agents.workspace import get_workspace_tree
 from opensepia.agents.writer import read_file_safe
+from opensepia.config import MAX_STANDUP_CHARS, MAX_INBOX_CHARS
 
 logger = logging.getLogger(__name__)
 
-MAX_STANDUP_CHARS = 2000
-MAX_INBOX_CHARS = 1500
 MAX_COMMENT_CONTEXT_CHARS = 6000
 
 

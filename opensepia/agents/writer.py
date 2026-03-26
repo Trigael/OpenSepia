@@ -6,6 +6,7 @@ protection) and handles standup fallback + provider comment posting.
 """
 
 import logging
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,6 @@ def archive_inbox(agent_id: str, content: str, board_dir: Path) -> None:
     """Archive processed inbox to board/archive/{agent_id}/."""
     if not content.strip():
         return
-    from datetime import datetime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_dir = board_dir / "archive" / agent_id
     archive_dir.mkdir(parents=True, exist_ok=True)

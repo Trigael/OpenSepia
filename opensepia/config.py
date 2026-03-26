@@ -20,6 +20,10 @@ DEFAULT_EXECUTION = {
     "pause_between_agents": 0,
 }
 
+# Shared constants for context/inbox truncation
+MAX_STANDUP_CHARS = 2000
+MAX_INBOX_CHARS = 1500
+
 
 @dataclass
 class OrchestratorConfig:

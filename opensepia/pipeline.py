@@ -1,30 +1,28 @@
 """
-AI Dev Team — Pipeline runner.
+AI Dev Team — Pipeline runner with cycle checkpointing.
 
 Defines the Step protocol and Pipeline class that executes steps
-sequentially with structured error handling.
+sequentially with structured error handling and resumability.
 """
 
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from opensepia.errors import OrchestratorError
+from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PipelineContext:
-    """Shared mutable state flowing through the pipeline.
-
-    Each step reads from and writes to this context, allowing
-    subsequent steps to react to earlier results.
-    """
+    """Shared mutable state flowing through the pipeline."""
     mode: str
-    tool_dir: Path         # OpenSepia tool root
-    project_dir: Path      # Product project root (board/, workspace/, project.yaml)
+    tool_dir: Path
+    project_dir: Path
     agents_config: dict[str, Any]
     project_config: dict[str, Any]
     board_dir: Path
@@ -46,6 +44,9 @@ class PipelineContext:
     dry_run: bool = False
     no_increment: bool = False
 
+    # Cycle state for checkpointing (set by Pipeline.run)
+    cycle_state: CycleState | None = None
+
 
 @runtime_checkable
 class Step(Protocol):
@@ -61,46 +62,87 @@ class Step(Protocol):
 
 
 class Pipeline:
-    """Executes a sequence of Steps, handling errors per step.
+    """Executes steps with checkpointing for resumability.
 
-    Non-critical steps log errors and continue. Critical steps
-    cause the pipeline to abort immediately.
+    After each step completes, the cycle state is saved. On resume,
+    completed steps are skipped.
     """
 
     def __init__(self, steps: list[Step]):
         self.steps = steps
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
-        """Execute all steps in order.
+    def run(self, ctx: PipelineContext, resume_state: CycleState | None = None) -> PipelineContext:
+        """Execute steps in order, checkpointing after each.
 
         Args:
-            ctx: Pipeline context to flow through steps.
+            ctx: Pipeline context.
+            resume_state: If provided, resume from this interrupted state
+                          (skip already-completed steps).
 
         Returns:
-            The context after all steps have run (or the pipeline aborted).
-
-        Raises:
-            OrchestratorError: If a critical step fails.
+            The context after all steps have run.
         """
         from opensepia import log
+
+        state_path = ctx.project_dir / CYCLE_STATE_FILE
+
+        # Initialize or resume cycle state
+        if resume_state and resume_state.is_interrupted:
+            state = resume_state
+            state.status = "in_progress"
+            completed = set(state.completed_steps)
+            log.info(f"Resuming interrupted cycle {state.cycle_id}")
+            log.detail(f"Completed steps: {', '.join(state.completed_steps)}")
+        else:
+            state = CycleState(
+                cycle_id=f"s{ctx.sprint_num}c{ctx.cycle_num}",
+                sprint=ctx.sprint_num,
+                cycle=ctx.cycle_num,
+                mode=ctx.mode,
+                status="in_progress",
+                agent_ids=list(ctx.agent_ids),
+                started_at=datetime.now().isoformat(),
+            )
+            completed = set()
+
+        state.save(state_path)
+        ctx.cycle_state = state
+
         for step in self.steps:
+            # Skip already-completed steps on resume
+            if step.name in completed:
+                log.step_detail("pipeline", f"Skipping {step.name} (already done)")
+                continue
+
             try:
                 log.step_detail("pipeline", f"Running step: {step.name}")
+                state.current_step = step.name
+                state.save(state_path)
+
                 ctx = step.execute(ctx)
+
+                state.mark_step_complete(step.name, state_path)
+
             except OrchestratorError as e:
                 ctx.errors.append(e)
                 if step.critical:
                     logger.error("Critical step '%s' failed: %s", step.name, e)
+                    state.mark_failed(state_path)
                     raise
                 else:
                     logger.warning("Step '%s' failed (non-critical): %s", step.name, e)
+                    state.mark_step_complete(step.name, state_path)
+
             except Exception as e:
                 wrapped = OrchestratorError(f"Unexpected error in {step.name}: {e}")
                 ctx.errors.append(wrapped)
                 if step.critical:
                     logger.error("Critical step '%s' unexpected error: %s", step.name, e)
+                    state.mark_failed(state_path)
                     raise OrchestratorError(str(e)) from e
                 else:
                     logger.warning("Step '%s' unexpected error (non-critical): %s", step.name, e)
+                    state.mark_step_complete(step.name, state_path)
 
+        state.mark_completed(state_path)
         return ctx
