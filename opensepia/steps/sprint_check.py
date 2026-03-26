@@ -52,10 +52,12 @@ class SprintCheckStep:
 
     def _run_retrospective(self, ctx: PipelineContext) -> None:
         """Run PO and PM agents for retrospective (no cycle increment)."""
-        from opensepia.agents.context import build_agent_context
+        from opensepia.agents.context import build_agent_context_from_adapter
         from opensepia.agents.invoker import invoke_agent
-        from opensepia.agents.writer import apply_output
+        from opensepia.agents.parser import parse_files_section
+        from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
 
+        adapter = ctx.board_adapter
         standup_file = ctx.board_dir / "standup.md"
 
         for agent_id in ["po", "pm"]:
@@ -64,9 +66,9 @@ class SprintCheckStep:
                 if not agent_cfg:
                     continue
 
-                context = build_agent_context(
-                    agent_id, ctx.agents_config, ctx.project_config,
-                    ctx.board_dir, ctx.workspace_dir,
+                agent_ctx = adapter.get_agent_context(agent_id, ctx.agents_config, ctx.project_config)
+                context = build_agent_context_from_adapter(
+                    agent_id, ctx.agents_config, agent_ctx,
                 )
                 result = invoke_agent(
                     agent_id=agent_id,
@@ -85,10 +87,11 @@ class SprintCheckStep:
                         "context_size": result.context_size,
                         "response_size": result.response_size,
                     }
-                    apply_output(
-                        agent_id, result_dict, ctx.agents_config,
-                        ctx.project_dir, ctx.board_dir, standup_file,
-                    )
+                    parsed = parse_files_section(result_dict["response"])
+                    adapter.apply_agent_output(agent_id, parsed, ctx.agents_config)
+                    _handle_standup_fallback(agent_id, result_dict, parsed, ctx.agents_config, standup_file)
+                    _handle_provider_comments(agent_id, parsed)
+                    adapter.archive_inbox(agent_id)
                     logger.info("%s retrospective completed", agent_id)
                 else:
                     logger.warning("%s retrospective failed: %s", agent_id, result.error)
