@@ -6,6 +6,8 @@ This is an extraction of the current direct file operations from
 agents/context.py, agents/writer.py, and steps/agent_runner.py.
 """
 
+import re
+import shutil
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +42,8 @@ class MarkdownBoardAdapter(BoardAdapter):
         self.board_dir = board_dir
         self.workspace_dir = workspace_dir
         self.project_dir = project_dir
+
+    SNAPSHOT_FILES = ["sprint.md", "backlog.md", "project.md", "architecture.md", "decisions.md"]
 
     def _read(self, path: Path) -> str:
         try:
@@ -213,3 +217,89 @@ class MarkdownBoardAdapter(BoardAdapter):
             inbox_file = inbox_dir / f"{agent}.md"
             if not inbox_file.exists():
                 inbox_file.touch()
+
+    # ----- New adapter methods -----
+
+    def get_sprint_text(self) -> str:
+        return self._read(self.board_dir / "sprint.md")
+
+    def get_backlog_text(self) -> str:
+        return self._read(self.board_dir / "backlog.md")
+
+    def get_standup_text(self) -> str:
+        return self._read(self.board_dir / "standup.md")
+
+    def get_sprint_number(self) -> int:
+        content = self._read(self.board_dir / "sprint.md")
+        m = re.search(r"Sprint\s+(\d+)", content)
+        return int(m.group(1)) if m else 1
+
+    def get_active_story_ids(self) -> list[str]:
+        """Parse sprint.md for stories in TODO/IN_PROGRESS/REVIEW/TESTING sections."""
+        content = self._read(self.board_dir / "sprint.md")
+        if not content:
+            return []
+
+        active_statuses = {"todo", "in progress", "in_progress", "review", "testing"}
+        current_status = None
+        ids: list[str] = []
+
+        for line in content.split("\n"):
+            stripped = line.strip().lower()
+            if stripped.startswith("## "):
+                section = stripped[3:].strip()
+                current_status = section if section in active_statuses else None
+            elif current_status:
+                refs = re.findall(r"((?:STORY|BUG)-\d+)", line)
+                ids.extend(refs)
+
+        return ids
+
+    def get_board_summary(self) -> dict[str, int]:
+        """Count stories by status from sprint.md checkboxes."""
+        content = self._read(self.board_dir / "sprint.md")
+        if not content:
+            return {}
+
+        summary: dict[str, int] = {}
+        current_section: str | None = None
+
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                current_section = stripped[3:].strip().lower().replace(" ", "_")
+                if current_section not in summary:
+                    summary[current_section] = 0
+            elif current_section and stripped.startswith("- ["):
+                summary[current_section] = summary.get(current_section, 0) + 1
+
+        return summary
+
+    def check_board_health(self) -> dict[str, bool]:
+        """Check sprint.md and backlog.md exist and are non-empty."""
+        results: dict[str, bool] = {}
+        for fname in ("sprint.md", "backlog.md"):
+            fpath = self.board_dir / fname
+            results[fname] = fpath.exists() and fpath.stat().st_size > 0
+        return results
+
+    def create_snapshot(self) -> int:
+        """Copy board files to .snapshot/ directory."""
+        snapshot_dir = self.board_dir / ".snapshot"
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        count = 0
+        for fname in self.SNAPSHOT_FILES:
+            src = self.board_dir / fname
+            if src.exists():
+                shutil.copy2(src, snapshot_dir / f"{fname}.bak")
+                count += 1
+        return count
+
+    def send_inbox_message(self, to_agent: str, from_name: str, message: str) -> None:
+        """Append a message to an agent's inbox file."""
+        inbox_path = self.board_dir / "inbox" / f"{to_agent}.md"
+        inbox_path.parent.mkdir(parents=True, exist_ok=True)
+        entry = f"\n## Message from {from_name}\n{message}\n"
+        with open(inbox_path, "a", encoding="utf-8") as f:
+            f.write(entry)

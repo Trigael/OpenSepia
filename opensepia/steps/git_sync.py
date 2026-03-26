@@ -72,19 +72,28 @@ class GitSyncStep:
         """Compute feature branch name from active story IDs."""
         story_slug = ""
 
-        sprint_md_path = ctx.board_dir / "sprint.md"
-        if sprint_md_path.exists():
+        if ctx.board_adapter:
             try:
-                content = sprint_md_path.read_text(encoding="utf-8")
-                stories = re.findall(
-                    r"###\s+(STORY-\d+|BUG-\d+).*?\n\*\*Status\*\*:\s*(IN_PROGRESS|REVIEW|TESTING)",
-                    content, re.DOTALL,
-                )
-                if stories:
-                    ids = [s[0].lower().replace("-", "") for s in stories[:3]]
+                active_ids = ctx.board_adapter.get_active_story_ids()
+                if active_ids:
+                    ids = [sid.lower().replace("-", "") for sid in active_ids[:3]]
                     story_slug = "-".join(ids)
             except Exception:
                 pass
+        else:
+            sprint_md_path = ctx.board_dir / "sprint.md"
+            if sprint_md_path.exists():
+                try:
+                    content = sprint_md_path.read_text(encoding="utf-8")
+                    stories = re.findall(
+                        r"###\s+(STORY-\d+|BUG-\d+).*?\n\*\*Status\*\*:\s*(IN_PROGRESS|REVIEW|TESTING)",
+                        content, re.DOTALL,
+                    )
+                    if stories:
+                        ids = [s[0].lower().replace("-", "") for s in stories[:3]]
+                        story_slug = "-".join(ids)
+                except Exception:
+                    pass
 
         if story_slug:
             return f"ai-team/{story_slug}-s{ctx.sprint_num}c{ctx.cycle_num}"

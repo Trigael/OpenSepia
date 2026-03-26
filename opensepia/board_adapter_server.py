@@ -353,3 +353,58 @@ class BoardServerAdapter(BoardAdapter):
         result = self._api("GET", "/schema")
         if isinstance(result, dict) and "error" in result:
             logger.warning("Board server not reachable: %s", result)
+
+    # ----- New adapter methods -----
+
+    def get_sprint_text(self) -> str:
+        sprint_num = 1  # Will be overridden by project config when available
+        return self._build_sprint_md(sprint_num)
+
+    def get_backlog_text(self) -> str:
+        return self._build_backlog_md()
+
+    def get_standup_text(self) -> str:
+        return "\n".join(self._standup_entries) if self._standup_entries else ""
+
+    def get_sprint_number(self) -> int:
+        # Board server doesn't store sprint number — rely on items or default
+        return 1
+
+    def get_active_story_ids(self) -> list[str]:
+        """GET items with active status filter."""
+        ids: list[str] = []
+        for status in ("todo", "in_progress", "review", "testing"):
+            items = self._api("GET", "/items", params={"status": status})
+            if isinstance(items, list):
+                for item in items:
+                    item_id = item.get("id", "")
+                    if item_id:
+                        ids.append(item_id)
+        return ids
+
+    def get_board_summary(self) -> dict[str, int]:
+        """GET /board and count items per status."""
+        board = self._api("GET", "/board")
+        if isinstance(board, dict) and "error" in board:
+            return {}
+        summary: dict[str, int] = {}
+        if isinstance(board, dict):
+            for status_key, items in board.items():
+                if isinstance(items, list):
+                    summary[status_key] = len(items)
+        return summary
+
+    def check_board_health(self) -> dict[str, bool]:
+        """Ping /api/schema to check if the server is reachable."""
+        result = self._api("GET", "/schema")
+        ok = isinstance(result, dict) and "error" not in result
+        return {"server_reachable": ok}
+
+    def create_snapshot(self) -> int:
+        """No-op for board server — server manages its own state."""
+        return 0
+
+    def send_inbox_message(self, to_agent: str, from_name: str, message: str) -> None:
+        """POST a message to the board server inbox."""
+        self._api("POST", f"/inbox/{to_agent}",
+                  data={"message": message}, agent=from_name)

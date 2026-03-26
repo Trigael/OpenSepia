@@ -66,6 +66,51 @@ class BoardAdapter(ABC):
         """Ensure the board is ready (create dirs, inbox files, etc.)."""
         ...
 
+    @abstractmethod
+    def get_sprint_text(self) -> str:
+        """Return the full sprint markdown text."""
+        ...
+
+    @abstractmethod
+    def get_backlog_text(self) -> str:
+        """Return the full backlog markdown text."""
+        ...
+
+    @abstractmethod
+    def get_standup_text(self) -> str:
+        """Return the current standup text."""
+        ...
+
+    @abstractmethod
+    def get_sprint_number(self) -> int:
+        """Return the current sprint number from the board."""
+        ...
+
+    @abstractmethod
+    def get_active_story_ids(self) -> list[str]:
+        """Return IDs of stories in active statuses (TODO/IN_PROGRESS/REVIEW/TESTING)."""
+        ...
+
+    @abstractmethod
+    def get_board_summary(self) -> dict[str, int]:
+        """Return counts of stories by status."""
+        ...
+
+    @abstractmethod
+    def check_board_health(self) -> dict[str, bool]:
+        """Check board health. Returns dict of check_name -> pass/fail."""
+        ...
+
+    @abstractmethod
+    def create_snapshot(self) -> int:
+        """Create a snapshot of the current board state. Returns number of files saved."""
+        ...
+
+    @abstractmethod
+    def send_inbox_message(self, to_agent: str, from_name: str, message: str) -> None:
+        """Send a message to an agent's inbox."""
+        ...
+
 
 def create_board_adapter(
     board_dir: Path,

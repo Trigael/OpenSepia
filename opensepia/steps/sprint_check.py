@@ -102,17 +102,22 @@ class SprintCheckStep:
 
         # Check board for sprint number (agents may have advanced it)
         new_sprint = old_sprint + 1
-        sprint_md_path = ctx.board_dir / "sprint.md"
-        if sprint_md_path.exists():
-            try:
-                header = sprint_md_path.read_text(encoding="utf-8").split("\n")[0]
-                m = re.search(r"Sprint\s+(\d+)", header)
-                if m:
-                    board_sprint = int(m.group(1))
-                    if board_sprint > old_sprint:
-                        new_sprint = board_sprint
-            except Exception:
-                pass
+        if ctx.board_adapter:
+            board_sprint = ctx.board_adapter.get_sprint_number()
+            if board_sprint > old_sprint:
+                new_sprint = board_sprint
+        else:
+            sprint_md_path = ctx.board_dir / "sprint.md"
+            if sprint_md_path.exists():
+                try:
+                    header = sprint_md_path.read_text(encoding="utf-8").split("\n")[0]
+                    m = re.search(r"Sprint\s+(\d+)", header)
+                    if m:
+                        board_sprint = int(m.group(1))
+                        if board_sprint > old_sprint:
+                            new_sprint = board_sprint
+                except Exception:
+                    pass
 
         sprint_cfg["current_sprint"] = new_sprint
         sprint_cfg["current_cycle"] = 0
@@ -136,16 +141,19 @@ class SprintSyncStep:
     critical = False
 
     def execute(self, ctx: PipelineContext) -> PipelineContext:
-        sprint_md_path = ctx.board_dir / "sprint.md"
-        if not sprint_md_path.exists():
-            return ctx
+        if ctx.board_adapter:
+            board_sprint = ctx.board_adapter.get_sprint_number()
+        else:
+            sprint_md_path = ctx.board_dir / "sprint.md"
+            if not sprint_md_path.exists():
+                return ctx
 
-        content = sprint_md_path.read_text(encoding="utf-8")
-        all_sprints = re.findall(r"#\s*Sprint\s+(\d+)", content)
-        if not all_sprints:
-            return ctx
+            content = sprint_md_path.read_text(encoding="utf-8")
+            all_sprints = re.findall(r"#\s*Sprint\s+(\d+)", content)
+            if not all_sprints:
+                return ctx
 
-        board_sprint = max(int(s) for s in all_sprints)
+            board_sprint = max(int(s) for s in all_sprints)
         sprint_cfg = ctx.project_config.get("sprint", {})
         yaml_sprint = sprint_cfg.get("current_sprint", 1)
 

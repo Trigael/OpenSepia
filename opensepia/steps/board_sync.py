@@ -22,6 +22,13 @@ class BoardSyncStep:
         if ctx.dry_run:
             return ctx
 
+        # Skip if using BoardServerAdapter — server already syncs
+        if ctx.board_adapter:
+            from opensepia.board_adapter_server import BoardServerAdapter
+            if isinstance(ctx.board_adapter, BoardServerAdapter):
+                log.step_detail("board_sync", "Skipping (board server adapter handles sync)")
+                return ctx
+
         log.step("board_sync", "Board sync...")
 
         try:

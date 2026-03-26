@@ -19,14 +19,13 @@ def cmd_board(argv: list[str]) -> None:
         log.error(str(e))
         return
 
-    board_dir = config.board_dir
-    sprint_path = board_dir / "sprint.md"
+    from opensepia.board_adapter import create_board_adapter
+    adapter = create_board_adapter(config.board_dir, config.workspace_dir, config.project_dir)
 
-    if not sprint_path.exists():
+    content = adapter.get_sprint_text()
+    if not content.strip():
         log.info("No sprint board yet. Run: opensepia init <name>")
         return
-
-    content = sprint_path.read_text(encoding="utf-8")
 
     log.header("Sprint Board")
     for line in content.split("\n"):
@@ -44,9 +43,9 @@ def cmd_board(argv: list[str]) -> None:
         elif stripped.startswith("**") and ":" in stripped:
             log.detail(f"    {stripped}")
 
-    backlog_path = board_dir / "backlog.md"
-    if backlog_path.exists():
-        backlog = backlog_path.read_text(encoding="utf-8")
+    summary = adapter.get_board_summary()
+    backlog = adapter.get_backlog_text()
+    if backlog.strip():
         story_count = len(re.findall(r"###\s+(STORY|BUG)-\d+", backlog))
         print()
         log.info(f"Backlog: {story_count} stories/bugs")
@@ -73,14 +72,11 @@ def cmd_message(argv: list[str]) -> None:
         log.info(f"Valid agents: {', '.join(sorted(known))}")
         return
 
-    inbox_path = config.board_dir / "inbox" / f"{args.agent}.md"
-    inbox_path.parent.mkdir(parents=True, exist_ok=True)
-
     message = " ".join(args.text)
-    entry = f"\n## Message from Human\n{message}\n"
 
-    with open(inbox_path, "a", encoding="utf-8") as f:
-        f.write(entry)
+    from opensepia.board_adapter import create_board_adapter
+    adapter = create_board_adapter(config.board_dir, config.workspace_dir, config.project_dir)
+    adapter.send_inbox_message(args.agent, "Human", message)
 
     agent_name = config.agents["agents"][args.agent].get("name", args.agent)
     log.success(f"Message sent to {agent_name} ({args.agent})")

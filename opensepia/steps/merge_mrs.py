@@ -20,6 +20,13 @@ class MergeMRsStep:
         if ctx.dry_run:
             return ctx
 
+        # Skip if using BoardServerAdapter
+        if ctx.board_adapter:
+            from opensepia.board_adapter_server import BoardServerAdapter
+            if isinstance(ctx.board_adapter, BoardServerAdapter):
+                log.step_detail("merge_mrs", "Skipping (board server adapter handles MRs)")
+                return ctx
+
         log.step("merge_mrs", "Auto-merge approved MRs...")
 
         try:
