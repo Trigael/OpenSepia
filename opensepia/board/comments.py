@@ -41,7 +41,12 @@ def post_agent_messages_to_provider(
     written_files: list[dict[str, str]],
     client: Any,
 ) -> int:
-    """Post agent inbox messages as comments to provider issues/MRs."""
+    """Post agent review messages as comments to provider issues/MRs.
+
+    Only posts messages that are code reviews, QA reviews, or explicit
+    approvals. Regular inbox messages (task assignments, coordination,
+    status updates) stay inbox-only to avoid noise on stories.
+    """
     if not client or not client.enabled:
         return 0
 
@@ -52,6 +57,11 @@ def post_agent_messages_to_provider(
         content = file_info.get("content", "")
 
         if "board/inbox/" not in path or not content.strip():
+            continue
+
+        # Only post reviews and approvals as story comments — not every
+        # inbox message that happens to mention a story ID
+        if not _is_review_message(content):
             continue
 
         story_refs = extract_story_refs(content)
@@ -71,6 +81,7 @@ def post_agent_messages_to_provider(
             except Exception as e:
                 logger.warning("Provider: error sending comment on %s: %s", story_id, e)
 
+        # Post reviews on MRs too
         mr_refs = extract_mr_refs(content)
         for mr_iid in mr_refs:
             try:
@@ -82,17 +93,17 @@ def post_agent_messages_to_provider(
             except Exception as e:
                 logger.warning("Provider: error commenting on MR !%d: %s", mr_iid, e)
 
-        if _is_review_message(content) and story_refs:
-            mr_iids_from_stories = _find_mrs_for_stories(client, story_refs)
-            for mr_iid in mr_iids_from_stories - mr_refs:
-                try:
-                    result = client.comment_on_mr(mr_iid, comment_body, agent_id=agent_id)
-                    if "error" not in result:
-                        posted += 1
-                    if _is_approval(content):
-                        _try_approve_mr(client, mr_iid, agent_id)
-                except Exception as e:
-                    logger.warning("Provider: error posting review on MR !%d: %s", mr_iid, e)
+        # Find MRs for reviewed stories
+        mr_iids_from_stories = _find_mrs_for_stories(client, story_refs)
+        for mr_iid in mr_iids_from_stories - mr_refs:
+            try:
+                result = client.comment_on_mr(mr_iid, comment_body, agent_id=agent_id)
+                if "error" not in result:
+                    posted += 1
+                if _is_approval(content):
+                    _try_approve_mr(client, mr_iid, agent_id)
+            except Exception as e:
+                logger.warning("Provider: error posting review on MR !%d: %s", mr_iid, e)
 
     return posted
 
@@ -166,7 +177,14 @@ def _try_approve_mr(client: Any, mr_iid: int, agent_id: str) -> None:
 # =============================================================================
 
 def post_standup_to_provider(standup_path: Path, client: Any) -> int:
-    """Post standup.md content as comments to relevant provider issues."""
+    """Post standup summary to provider.
+
+    Disabled: standup dumps on individual stories create noise.
+    The standup is available via the board files and cycle logs instead.
+    """
+    return 0
+
+    # Original implementation kept for reference:
     if not client or not client.enabled:
         return 0
     if not standup_path.exists():

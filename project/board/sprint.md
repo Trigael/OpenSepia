@@ -1,18 +1,20 @@
-# Sprint 1 — Initialization
+# Sprint 1 — Foundation
 
-**Goal**: Define the project, create a foundation for development
-**Start**: 2026-03-17 12:28
-**Cycle**: 0/10
+**Goal**: Stand up the core API, database, and dev environment so the team can build features on a solid base.
+**Start**: 2026-03-26 20:18
 
-## 📋 TODO
-- [ ] STORY-001: Define MVP scope (PO)
-- [ ] STORY-002: Set up development environment (DevOps + Dev)
+## TODO
+- [ ] STORY-005: CRUD endpoints for boards (dev1) — blocked by STORY-003 + STORY-004
+- [ ] STORY-006: CRUD endpoints for items (dev1) — blocked by STORY-005
 
-## 🔄 IN PROGRESS
+## IN_PROGRESS
 
-## ✅ DONE
+## REVIEW
+- [ ] STORY-002: Set up development environment (devops)
+- [ ] STORY-003: Core API scaffold with FastAPI (dev1)
+- [ ] STORY-004: Database models and MongoDB integration (dev2)
 
-## 🚫 BLOCKED
+## DONE
+- [x] STORY-001: Define MVP scope (po)
 
-## 📊 Velocity
-- Completed this sprint: 0
+## BLOCKED

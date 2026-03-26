@@ -4,9 +4,12 @@ limits:
   max_tokens_per_agent: 8192
   pause_between_agents: 5
 project:
-  description: Describe your project here. The more detail you provide, the better
-    the agents will understand what to build.
-  name: My Cool API
+  description: 'A better version of the board server. Build a modern, async Python
+    board server with: FastAPI instead of stdlib http.server, WebSocket support for
+    real-time updates, better search with full-text indexing, role-based access control,
+    file attachments on items, sprint management with burndown charts, and a React
+    frontend with drag-and-drop kanban.'
+  name: Board Server v2
   paths:
     archive: board/archive
     board: board
