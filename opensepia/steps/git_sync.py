@@ -36,16 +36,19 @@ class GitSyncStep:
         workspace = ctx.workspace_dir
         git_dir = workspace / ".git"
 
+        if not workspace.exists():
+            return ctx
+
         if not git_dir.exists():
-            print("  Git sync skipped (workspace is not a git repo)")
-            print("  To enable: cd project/workspace && git init && git remote add origin <url>")
+            # Not an error — git is optional. Only log at debug level.
+            logger.debug("Git sync skipped (workspace is not a git repo)")
             return ctx
 
         repo_url = os.environ.get("GIT_REPO_URL", "")
         git_token = os.environ.get("GIT_TOKEN", "")
 
         if not repo_url:
-            print("  Git sync skipped (GIT_REPO_URL not set)")
+            logger.debug("Git sync skipped (GIT_REPO_URL not set)")
             return ctx
 
         auth_url = re.sub(r"https://", f"https://oauth2:{git_token}@", repo_url)

@@ -108,6 +108,66 @@ def check_claude_cli() -> bool:
     return shutil.which("claude") is not None
 
 
+def check_project_ready(config: OrchestratorConfig) -> list[str]:
+    """Check if the project is ready to run. Returns list of issues (empty = ready)."""
+    issues = []
+
+    # Check project dir exists
+    if not config.project_dir.exists():
+        issues.append("Project directory does not exist. Run: opensepia init <name>")
+        return issues
+
+    # Check project.yaml
+    if not (config.project_dir / "project.yaml").exists():
+        issues.append("No project.yaml found. Run: opensepia init <name>")
+        return issues
+
+    # Check board files
+    board = config.board_dir
+    if not board.exists() or not (board / "sprint.md").exists():
+        issues.append("Board not initialized. Run: opensepia init <name>")
+
+    # Check workspace
+    workspace = config.workspace_dir
+    if not workspace.exists():
+        issues.append("Workspace directory missing. Run: opensepia init <name>")
+
+    return issues
+
+
+def check_workspace_git(config: OrchestratorConfig) -> dict:
+    """Check git status of the workspace. Returns status dict."""
+    workspace = config.workspace_dir
+    git_dir = workspace / ".git"
+
+    if not workspace.exists():
+        return {"initialized": False, "reason": "workspace missing"}
+
+    if not git_dir.exists():
+        return {"initialized": False, "reason": "no git"}
+
+    # Check for remote
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "remote", "-v"],
+            capture_output=True, text=True,
+            cwd=str(workspace), timeout=5,
+        )
+        has_remote = bool(result.stdout.strip())
+    except Exception:
+        has_remote = False
+
+    repo_url = os.environ.get("GIT_REPO_URL", "")
+
+    return {
+        "initialized": True,
+        "has_remote": has_remote,
+        "repo_url": repo_url,
+        "path": str(workspace),
+    }
+
+
 # =============================================================================
 # Command: run
 # =============================================================================
@@ -138,17 +198,32 @@ def cmd_run(argv: list[str]) -> None:
         print(f"ERROR: {e}")
         sys.exit(1)
 
+    # Check project is ready
+    issues = check_project_ready(config)
+    if issues:
+        for issue in issues:
+            print(f"ERROR: {issue}")
+        sys.exit(1)
+
     try:
         agent_ids = config.resolve_agent_ids(mode)
     except ConfigError as e:
         print(f"ERROR: {e}")
         sys.exit(1)
 
+    # Git status hint (not an error — git is optional)
+    git_info = check_workspace_git(config)
+    git_label = ""
+    if git_info["initialized"]:
+        git_label = " + git"
+    else:
+        git_label = " (no git)"
+
     print()
     print("============================================")
     print("  OpenSepia — Single Cycle")
     print(f"  {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  Mode: {mode} ({len(agent_ids)} agents)")
+    print(f"  Mode: {mode} ({len(agent_ids)} agents{git_label})")
     print("============================================")
 
     lock = ProcessLock(mode)
@@ -222,7 +297,20 @@ def cmd_start(argv: list[str]) -> None:
         print(f"ERROR: {e}")
         sys.exit(1)
 
-    print(f"Starting daemon (mode: {mode}, pause: {args.pause}s)...")
+    # Check project is ready
+    issues = check_project_ready(config)
+    if issues:
+        for issue in issues:
+            print(f"ERROR: {issue}")
+        sys.exit(1)
+
+    # Git status hint
+    git_info = check_workspace_git(config)
+    git_note = ""
+    if not git_info["initialized"]:
+        git_note = " (git sync disabled — no git repo in workspace)"
+
+    print(f"Starting daemon (mode: {mode}, pause: {args.pause}s{git_note})...")
 
     try:
         daemon = OrchestratorDaemon(mode=mode, pause=args.pause, verbose=args.verbose)
@@ -317,6 +405,21 @@ def cmd_status(argv: list[str]) -> None:
 
     if sprint_info:
         print(f"  Project:  {sprint_info}")
+
+    # Git status
+    try:
+        config = OrchestratorConfig.load()
+        git_info = check_workspace_git(config)
+        if git_info["initialized"]:
+            remote_str = git_info.get("repo_url", "")
+            if git_info.get("has_remote"):
+                print(f"  Git:      {remote_str or 'configured'}")
+            else:
+                print(f"  Git:      initialized (no remote — run: cd project/workspace && git remote add origin <url>)")
+        else:
+            print(f"  Git:      not set up (optional — run: cd project/workspace && git init)")
+    except Exception:
+        pass
 
     print()
 
@@ -539,9 +642,13 @@ def cmd_init(argv: list[str]) -> None:
     print(f"  Workspace: {workspace_dir}")
     print()
     print(f"Next steps:")
-    print(f"  opensepia start                    # run without git")
-    print(f"  # Or set up git for the workspace:")
-    print(f"  cd {workspace_dir} && git init && git remote add origin <repo-url>")
+    print(f"  1. opensepia start                 # start running cycles")
+    print()
+    print(f"Optional — enable git sync:")
+    print(f"  cd {workspace_dir}")
+    print(f"  git init")
+    print(f"  git remote add origin <your-repo-url>")
+    print(f"  # Then set GIT_REPO_URL and GIT_TOKEN in config/.env")
 
 
 # =============================================================================
