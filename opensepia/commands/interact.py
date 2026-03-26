@@ -267,6 +267,7 @@ def _config_show(argv: list[str]) -> None:
     if section in ("all", "env"):
         log.header("Provider Integration")
 
+        board_url = os.environ.get("BOARD_SERVER_URL", "")
         gl_url = os.environ.get("GITLAB_URL", "")
         gl_token = os.environ.get("GITLAB_TOKEN", "")
         gl_project = os.environ.get("GITLAB_PROJECT_ID", "")
@@ -275,7 +276,9 @@ def _config_show(argv: list[str]) -> None:
         gh_repo = os.environ.get("GITHUB_REPO", "")
         git_url = os.environ.get("GIT_REPO_URL", "")
 
-        if gl_url and gl_token:
+        if board_url:
+            log.info(f"Board Server: {board_url}")
+        elif gl_url and gl_token:
             log.info(f"GitLab:       {gl_url}")
             log.info(f"Project:      {gl_project}")
         elif gh_token and gh_repo:

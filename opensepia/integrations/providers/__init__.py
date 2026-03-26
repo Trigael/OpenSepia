@@ -18,9 +18,18 @@ def detect_provider() -> Optional[BoardProvider]:
     Detect the active provider from env vars.
 
     Priority:
-    1. GitLab — if GITLAB_URL + GITLAB_TOKEN are set
-    2. GitHub — if GITHUB_TOKEN + GITHUB_REPO are set
+    1. Board Server — if BOARD_SERVER_URL is set (self-hosted, fastest)
+    2. GitLab — if GITLAB_URL + GITLAB_TOKEN are set
+    3. GitHub — if GITHUB_TOKEN + GITHUB_REPO are set
     """
+    # Board Server (self-hosted)
+    if os.getenv("BOARD_SERVER_URL"):
+        from .boardserver import BoardServerProvider
+        provider = BoardServerProvider()
+        if provider.enabled:
+            logger.info("Board provider: Board Server (%s)", os.getenv("BOARD_SERVER_URL"))
+            return provider
+
     # GitLab
     if os.getenv("GITLAB_URL") and os.getenv("GITLAB_TOKEN"):
         from .gitlab import GitLabProvider
