@@ -1,12 +1,15 @@
 """Tests for orchestrator/pipeline.py — step execution and error handling."""
 
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from opensepia.pipeline import Pipeline, PipelineContext
 from opensepia.errors import OrchestratorError
+
+_TMP = Path(tempfile.gettempdir())
 
 
 # ---------------------------------------------------------------------------
@@ -17,14 +20,14 @@ def _make_ctx(**kwargs) -> PipelineContext:
     """Create a minimal PipelineContext for testing."""
     defaults = dict(
         mode="test",
-        tool_dir=Path("/tmp/test"),
-        project_dir=Path("/tmp/test/project"),
+        tool_dir=_TMP / "test",
+        project_dir=_TMP / "test" / "project",
         agents_config={"agents": {}, "global": {}},
         project_config={"sprint": {"current_sprint": 1, "current_cycle": 0}},
-        board_dir=Path("/tmp/test/project/board"),
-        workspace_dir=Path("/tmp/test/project/workspace"),
-        config_dir=Path("/tmp/test/config"),
-        logs_dir=Path("/tmp/test/project/logs/runs"),
+        board_dir=_TMP / "test" / "project" / "board",
+        workspace_dir=_TMP / "test" / "project" / "workspace",
+        config_dir=_TMP / "test" / "config",
+        logs_dir=_TMP / "test" / "project" / "logs" / "runs",
     )
     defaults.update(kwargs)
     return PipelineContext(**defaults)

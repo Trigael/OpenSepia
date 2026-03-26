@@ -323,7 +323,7 @@ def cmd_status(argv: list[str]) -> None:
 
 def cmd_pause(argv: list[str]) -> None:
     """Pause the running daemon."""
-    from opensepia.daemon import send_pause_signal, get_daemon_status
+    from opensepia.daemon import send_pause_command, get_daemon_status
 
     state = get_daemon_status()
     if not state.is_process_alive():
@@ -334,7 +334,7 @@ def cmd_pause(argv: list[str]) -> None:
         return
 
     try:
-        send_pause_signal()
+        send_pause_command(pause=True)
         print("Daemon paused. Run 'opensepia resume' to continue.")
     except RuntimeError as e:
         print(f"ERROR: {e}")
@@ -342,7 +342,7 @@ def cmd_pause(argv: list[str]) -> None:
 
 def cmd_resume(argv: list[str]) -> None:
     """Resume a paused daemon."""
-    from opensepia.daemon import send_pause_signal, get_daemon_status
+    from opensepia.daemon import send_pause_command, get_daemon_status
 
     state = get_daemon_status()
     if not state.is_process_alive():
@@ -353,7 +353,7 @@ def cmd_resume(argv: list[str]) -> None:
         return
 
     try:
-        send_pause_signal()
+        send_pause_command(pause=False)
         print("Daemon resumed.")
     except RuntimeError as e:
         print(f"ERROR: {e}")

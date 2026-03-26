@@ -8,6 +8,7 @@ a merge request via the provider API.
 import os
 import re
 import json
+import shutil
 import subprocess
 import logging
 import urllib.request
@@ -20,6 +21,29 @@ from opensepia.pipeline import PipelineContext
 from opensepia.errors import GitSyncError
 
 logger = logging.getLogger(__name__)
+
+SYNC_EXCLUDE = {".git", "node_modules", "__pycache__", ".venv", "venv", ".claude"}
+
+
+def _sync_directory(src: Path, dest: Path) -> None:
+    """Mirror src directory to dest (cross-platform replacement for rsync --delete)."""
+    # Remove dest files not in src
+    if dest.exists():
+        for item in dest.rglob("*"):
+            if item.is_dir():
+                continue
+            rel = item.relative_to(dest)
+            if any(part in SYNC_EXCLUDE for part in rel.parts):
+                continue
+            if not (src / rel).exists():
+                item.unlink()
+
+    # Copy src to dest
+    def _ignore(directory: str, contents: list[str]) -> set[str]:
+        return {c for c in contents if c in SYNC_EXCLUDE}
+
+    if src.exists():
+        shutil.copytree(src, dest, ignore=_ignore, dirs_exist_ok=True)
 
 
 class GitSyncStep:
@@ -112,22 +136,11 @@ class GitSyncStep:
         # Create/switch to feature branch
         run_git("checkout", "-b", branch_name, check=False)
 
-        # Rsync workspace/src -> repo/src
+        # Sync workspace/src -> repo/src (cross-platform, replaces rsync)
         src_dir = ctx.workspace_dir / "src"
         dest_dir = repo_path / "src"
         if src_dir.exists():
-            subprocess.run(
-                [
-                    "rsync", "-a", "--delete",
-                    "--exclude=.git", "--exclude=node_modules",
-                    "--exclude=__pycache__", "--exclude=.venv",
-                    "--exclude=venv", "--exclude=.claude",
-                    f"{src_dir}/", f"{dest_dir}/",
-                ],
-                capture_output=True,
-                cwd=str(repo_path),
-                timeout=60,
-            )
+            _sync_directory(src_dir, dest_dir)
 
         # Stage and check for changes
         run_git("add", "src/")

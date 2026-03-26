@@ -65,14 +65,11 @@ class DaemonState:
             return cls()
 
     def is_process_alive(self) -> bool:
-        """Check if the stored PID corresponds to a running process."""
+        """Check if the stored PID corresponds to a running process (cross-platform)."""
         if self.pid <= 0:
             return False
-        try:
-            os.kill(self.pid, 0)
-            return True
-        except (ProcessLookupError, PermissionError):
-            return False
+        from opensepia.lockfile import _is_pid_alive
+        return _is_pid_alive(self.pid)
 
     def mark_stopped(self, state_path: Path) -> None:
         """Mark daemon as stopped and clear transient fields."""
