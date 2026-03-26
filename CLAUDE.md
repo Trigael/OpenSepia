@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Autonomous AI development team framework. 9 Claude-powered agents work as an agile team: plan sprints, write code, review, test, handle security, deploy. Orchestrated by cron, communicates via Markdown files.
+Autonomous AI development team framework. 9 Claude-powered agents work as an agile team: plan sprints, write code, review, test, handle security, deploy. Runs as a background daemon, communicates via Markdown files.
 
 ## Project Structure
 
@@ -56,6 +56,7 @@ opensepia stop                   # Stop daemon
 opensepia run dev-team           # Single cycle
 opensepia run po --dry-run       # Preview without calling Claude
 opensepia monitor                # View cycle statistics
+opensepia config                 # Show editable configuration
 opensepia reset                  # Reset project state
 python3 -m pytest tests/ -v      # Run tests
 ```

@@ -44,17 +44,30 @@ OpenSepia — AI Dev Team
 Usage:
   opensepia <command> [options]
 
-Commands:
+Project:
   init <name> [desc]    Initialize a new project
+  reset                 Reset project (clears board, workspace, logs)
+
+Daemon:
   start [--mode MODE]   Start the daemon (runs cycles in background)
   stop                  Stop the running daemon
   status                Show current status
   pause                 Pause the daemon after current cycle
   resume                Resume a paused daemon
+
+Run:
   run [mode]            Run a single cycle, then exit
+  run [mode] --dry-run  Preview agent context without calling Claude
+
+Observe:
   logs [-f] [-n N]      View daemon logs
   monitor [days]        Show cycle statistics
-  reset                 Reset project (clears board, workspace, logs)
+
+Configure:
+  config                Show all editable configuration
+  config project        Show project settings
+  config agents         Show agent modes and execution params
+  config env            Show provider integration status
 
 Run modes:
   dev-team              6 agents: PO, PM, Dev1, Dev2, DevOps, Tester (default)
@@ -64,18 +77,11 @@ Run modes:
   <agent>               Single agent (po, pm, dev1, dev2, devops, tester,
                         sec_analyst, sec_engineer, sec_pentester)
 
-Options:
-  start --mode MODE          Daemon mode (default: dev-team)
-  start --pause SECS         Seconds between cycles (default: 60)
-  run [mode] --dry-run       Show agent context without calling Claude
-  logs -f                    Follow log output (like tail -f)
-
 Examples:
   opensepia init "My API" "REST API with FastAPI"
   opensepia start
   opensepia status
-  opensepia logs -f
-  opensepia stop
+  opensepia config
   opensepia run po --dry-run
 """
 
@@ -683,6 +689,121 @@ def cmd_reset(argv: list[str]) -> None:
 
 
 # =============================================================================
+# Command: config
+# =============================================================================
+
+def cmd_config(argv: list[str]) -> None:
+    """Show editable configuration."""
+    import os
+
+    section = argv[0] if argv else "all"
+
+    try:
+        config = OrchestratorConfig.load()
+    except ConfigError as e:
+        print(f"ERROR: {e}")
+        return
+
+    tool_dir = config.tool_dir
+    project_dir = config.project_dir
+
+    if section in ("all", "project"):
+        proj = config.project.get("project", {})
+        sprint = config.project.get("sprint", {})
+
+        print()
+        print("  Project Settings")
+        print(f"  {'─' * 50}")
+        print(f"  Name:         {proj.get('name', '(not set)')}")
+        print(f"  Description:  {proj.get('description', '(not set)')}")
+
+        tech = proj.get("tech_stack", {})
+        if tech:
+            print(f"  Tech stack:   {tech.get('language', '-')} / {tech.get('framework', '-')}")
+            print(f"                {tech.get('database', '-')} / {tech.get('deployment', '-')}")
+
+        print(f"  Sprint:       {sprint.get('current_sprint', 1)}")
+        print(f"  Cycle:        {sprint.get('current_cycle', 0)}")
+        print(f"  Cycles/sprint:{sprint.get('cycles_per_sprint', 10)}")
+        print(f"  Edit:         {project_dir / 'project.yaml'}")
+
+    if section in ("all", "agents"):
+        modes = config.agents.get("modes", {})
+        exec_cfg = config.agents.get("execution", {})
+
+        print()
+        print("  Agent Modes")
+        print(f"  {'─' * 50}")
+        for name, defn in modes.items():
+            agents = defn.get("agents", [])
+            aliases = defn.get("aliases", [])
+            default = " (default)" if defn.get("default") else ""
+            alias_str = f" (alias: {', '.join(aliases)})" if aliases else ""
+            print(f"  {name:<14} {len(agents)} agents{default}{alias_str}")
+            print(f"                 {', '.join(agents)}")
+
+        print()
+        print("  Execution Parameters")
+        print(f"  {'─' * 50}")
+        print(f"  Timeout:         {exec_cfg.get('timeout', 900)}s per agent")
+        print(f"  Max retries:     {exec_cfg.get('max_retries', 1)}")
+        print(f"  Retry delay:     {exec_cfg.get('retry_delay', 30)}s")
+        print(f"  Pause between:   {exec_cfg.get('pause_between_agents', 0)}s")
+
+        overrides = exec_cfg.get("overrides", {})
+        if overrides and isinstance(overrides, dict) and any(overrides.values()):
+            print(f"  Per-agent:")
+            for aid, ov in overrides.items():
+                if isinstance(ov, dict) and ov:
+                    print(f"    {aid}: {ov}")
+
+        print(f"  Edit:            {tool_dir / 'config' / 'agents.yaml'}")
+
+    if section in ("all", "env"):
+        print()
+        print("  Provider Integration")
+        print(f"  {'─' * 50}")
+
+        gl_url = os.environ.get("GITLAB_URL", "")
+        gl_token = os.environ.get("GITLAB_TOKEN", "")
+        gl_project = os.environ.get("GITLAB_PROJECT_ID", "")
+        gh_token = os.environ.get("GITHUB_TOKEN", "")
+        gh_owner = os.environ.get("GITHUB_OWNER", "")
+        gh_repo = os.environ.get("GITHUB_REPO", "")
+        git_url = os.environ.get("GIT_REPO_URL", "")
+
+        if gl_url and gl_token:
+            print(f"  GitLab:       {gl_url}")
+            print(f"  Project:      {gl_project}")
+            print(f"  Token:        {'*' * 8}...{gl_token[-4:]}" if len(gl_token) > 4 else "  Token:        (set)")
+        elif gh_token and gh_repo:
+            print(f"  GitHub:       {gh_owner}/{gh_repo}")
+            print(f"  Token:        {'*' * 8}...{gh_token[-4:]}" if len(gh_token) > 4 else "  Token:        (set)")
+        else:
+            print(f"  Provider:     (not configured)")
+            print(f"  Set GitLab or GitHub credentials in config/.env")
+
+        if git_url:
+            print(f"  Git repo:     {git_url}")
+        else:
+            print(f"  Git repo:     (not configured)")
+
+        print(f"  Edit:         {tool_dir / 'config' / '.env'}")
+
+    if section not in ("all", "project", "agents", "env"):
+        print(f"Unknown config section: {section}")
+        print(f"Valid: project, agents, env (or no argument for all)")
+        return
+
+    print()
+    print(f"  Editable files:")
+    print(f"    {str(project_dir / 'project.yaml'):<50} Project name, tech stack, sprint")
+    print(f"    {str(tool_dir / 'config' / 'agents.yaml'):<50} Modes, execution params, agent prompts")
+    print(f"    {str(tool_dir / 'config' / '.env'):<50} Provider tokens (GitLab/GitHub)")
+    print()
+
+
+# =============================================================================
 # Command router
 # =============================================================================
 
@@ -697,6 +818,7 @@ COMMANDS = {
     "logs": cmd_logs,
     "monitor": cmd_monitor,
     "reset": cmd_reset,
+    "config": cmd_config,
     # Legacy: "daemon" subcommand still works
     "daemon": None,
 }
