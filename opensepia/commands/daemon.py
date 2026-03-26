@@ -1,9 +1,7 @@
-"""Daemon commands: start, stop, status, pause, resume, logs."""
+"""Daemon commands: start, stop, status, pause, resume."""
 
 import sys
-import time
 import argparse
-import collections
 from pathlib import Path
 
 from opensepia import log
@@ -193,45 +191,4 @@ def cmd_resume(argv: list[str]) -> None:
         log.error(str(e))
 
 
-def cmd_logs(argv: list[str]) -> None:
-    """View daemon log file."""
-    parser = argparse.ArgumentParser(prog="opensepia logs", description="View daemon logs")
-    parser.add_argument("--lines", "-n", type=int, default=50, help="Number of lines (default: 50)")
-    parser.add_argument("--follow", "-f", action="store_true", help="Follow log output")
-    args = parser.parse_args(argv)
-
-    project_dir = Path(__file__).parent.parent.parent
-    log_path = project_dir / "logs" / "daemon.log"
-
-    if not log_path.exists():
-        log.info("No daemon log file yet. Start the daemon first:")
-        log.info("opensepia start")
-        return
-
-    if args.follow:
-        _tail_follow(log_path, args.lines)
-    else:
-        _tail_lines(log_path, args.lines)
-
-
-def _tail_lines(path: Path, n: int) -> None:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        lines = collections.deque(f, maxlen=n)
-    for line in lines:
-        print(line, end="")
-
-
-def _tail_follow(path: Path, n: int) -> None:
-    _tail_lines(path, n)
-    print("--- following (Ctrl+C to stop) ---")
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            f.seek(0, 2)
-            while True:
-                line = f.readline()
-                if line:
-                    print(line, end="")
-                else:
-                    time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n--- stopped ---")
+    # cmd_logs moved to observe.py (now supports --standup, --cycle, not just daemon log)

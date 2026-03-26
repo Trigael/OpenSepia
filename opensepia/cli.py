@@ -62,9 +62,13 @@ Interact:
   config set <key> val  Change a setting from CLI
 
 Observe:
-  logs [-f]             View daemon logs
+  logs                  View daemon logs (or --standup, --cycle)
+  logs --standup        Show standup from last cycle
+  logs --cycle          Show last cycle per-agent detail
+  logs -f               Follow daemon log output
   monitor [days]        Show cycle statistics
   history [count]       Show recent cycle history
+  history -d            Show with per-agent detail
 
 Manage:
   reset                 Reset project state

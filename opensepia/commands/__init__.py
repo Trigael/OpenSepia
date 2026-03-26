@@ -13,7 +13,6 @@ from opensepia.commands.daemon import (
     cmd_status,
     cmd_pause,
     cmd_resume,
-    cmd_logs,
 )
 from opensepia.commands.project import (
     cmd_init,
@@ -26,6 +25,7 @@ from opensepia.commands.interact import (
     cmd_config,
 )
 from opensepia.commands.observe import (
+    cmd_logs,
     cmd_monitor,
     cmd_history,
 )

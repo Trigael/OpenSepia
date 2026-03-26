@@ -52,10 +52,13 @@ class CycleLogStep:
             "agents_failed": failed,
             "agents_ok_count": len(ok),
             "agents_failed_count": len(failed),
+            "agents": agent_details,
             "status": "error" if failed else "ok",
             "git_sync": bool(os.environ.get("GIT_REPO_URL", "")),
             "provider_sync": bool(
-                os.environ.get("GITLAB_TOKEN", "") or os.environ.get("GITHUB_TOKEN", "")
+                os.environ.get("GITLAB_TOKEN", "")
+                or os.environ.get("GITHUB_TOKEN", "")
+                or os.environ.get("BOARD_SERVER_URL", "")
             ),
         }
 
