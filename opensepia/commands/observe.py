@@ -32,17 +32,17 @@ def cmd_monitor(argv: list[str]) -> None:
     if args.last:
         latest = logs_dir / "latest.json"
         if not latest.exists():
-            print("No logs yet.")
+            log.info("No logs yet.")
             return
         with open(latest, encoding="utf-8") as f:
             data = _json.load(f)
-        print(f"\n  Last cycle: {data.get('timestamp', '?')}")
+        log.header(f"Last cycle: {data.get('timestamp', '?')}")
         for a in data.get("agents", []):
             ctx = a.get("context_chars", 0)
             resp = a.get("response_chars", 0)
             err = f" [ERROR: {a['error']}]" if a.get("error") else ""
-            print(f"    {a['agent']}: {ctx} ctx / {resp} resp{err}")
-        print()
+            log.detail(f"  {a['agent']}: {ctx} ctx / {resp} resp{err}")
+        log.info("")
         return
 
     # Summary
@@ -64,7 +64,7 @@ def cmd_monitor(argv: list[str]) -> None:
                 continue
 
     if not logs:
-        print(f"  No logs for the last {args.days} days.")
+        log.info(f"No logs for the last {args.days} days.")
         return
 
     total_ctx = sum(sum(a.get("context_chars", 0) for a in l.get("agents", [])) for l in logs)
@@ -84,24 +84,25 @@ def cmd_monitor(argv: list[str]) -> None:
             agent_stats[n]["ctx"] += a.get("context_chars", 0)
             agent_stats[n]["resp"] += a.get("response_chars", 0)
 
-    print(f"\n  Report ({args.days} days)")
-    print(f"  {'─' * 40}")
-    print(f"  Cycles:  {len(logs)}")
-    print(f"  Context: {total_ctx:,} chars")
-    print(f"  Output:  {total_resp:,} chars")
+    log.header(f"Report ({args.days} days)")
+    log.info(f"Cycles:  {len(logs)}")
+    log.info(f"Context: {total_ctx:,} chars")
+    log.info(f"Output:  {total_resp:,} chars")
 
     if daily:
-        print(f"\n  Daily:")
+        log.info("")
+        log.info("Daily:")
         for day in sorted(daily):
             d = daily[day]
-            print(f"    {day}:  {d['cycles']} cycles, {d['chars']:,} chars")
+            log.detail(f"  {day}:  {d['cycles']} cycles, {d['chars']:,} chars")
 
     if agent_stats:
-        print(f"\n  Agents:")
+        log.info("")
+        log.info("Agents:")
         for name in sorted(agent_stats):
             s = agent_stats[name]
-            print(f"    {name:<20} {s['runs']:>3} runs  {s['ctx'] + s['resp']:>10,} chars")
-    print()
+            log.detail(f"  {name:<20} {s['runs']:>3} runs  {s['ctx'] + s['resp']:>10,} chars")
+    log.info("")
 
 
 def cmd_history(argv: list[str]) -> None:
@@ -153,4 +154,4 @@ def cmd_history(argv: list[str]) -> None:
         except Exception:
             continue
 
-    print()
+    log.info("")

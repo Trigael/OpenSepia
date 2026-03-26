@@ -1,10 +1,5 @@
 """Tests for orchestrator/board/restore.py — board health checking."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from opensepia.board.restore import check_board_health
 
 

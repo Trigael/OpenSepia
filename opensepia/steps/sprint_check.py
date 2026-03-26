@@ -52,28 +52,48 @@ class SprintCheckStep:
 
     def _run_retrospective(self, ctx: PipelineContext) -> None:
         """Run PO and PM agents for retrospective (no cycle increment)."""
-        import subprocess
-        import os
+        from opensepia.agents.context import build_agent_context
+        from opensepia.agents.invoker import invoke_agent
+        from opensepia.agents.writer import apply_output
 
-        env = os.environ.copy()
-        env.pop("CLAUDECODE", None)
+        standup_file = ctx.board_dir / "standup.md"
 
-        for agent in ["po", "pm"]:
+        for agent_id in ["po", "pm"]:
             try:
-                result = subprocess.run(
-                    ["python3", "scripts/run_agent_cli.py", "--agent", agent, "--verbose", "--no-increment"],
-                    capture_output=True,
-                    text=True,
-                    cwd=str(ctx.project_dir),
-                    env=env,
-                    timeout=1200,
+                agent_cfg = ctx.agents_config["agents"].get(agent_id)
+                if not agent_cfg:
+                    continue
+
+                context = build_agent_context(
+                    agent_id, ctx.agents_config, ctx.project_config,
+                    ctx.board_dir, ctx.workspace_dir,
                 )
-                if result.returncode != 0:
-                    logger.warning("%s retrospective agent failed: %s", agent, result.stderr[:200])
+                result = invoke_agent(
+                    agent_id=agent_id,
+                    context=context,
+                    base_dir=ctx.project_dir,
+                    agent_name=agent_cfg.get("name", agent_id),
+                    verbose=ctx.verbose,
+                )
+
+                if not result.error:
+                    result_dict = {
+                        "agent_id": result.agent_id,
+                        "agent_name": result.agent_name,
+                        "response": result.response,
+                        "timestamp": result.timestamp,
+                        "context_size": result.context_size,
+                        "response_size": result.response_size,
+                    }
+                    apply_output(
+                        agent_id, result_dict, ctx.agents_config,
+                        ctx.project_dir, ctx.board_dir, standup_file,
+                    )
+                    logger.info("%s retrospective completed", agent_id)
                 else:
-                    logger.info("%s retrospective completed", agent)
+                    logger.warning("%s retrospective failed: %s", agent_id, result.error)
             except Exception as e:
-                logger.warning("%s retrospective error: %s", agent, e)
+                logger.warning("%s retrospective error: %s", agent_id, e)
 
     def _advance_sprint(self, ctx: PipelineContext) -> None:
         """Increment sprint number, reset cycle to 0."""

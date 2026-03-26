@@ -1,10 +1,6 @@
 """Tests for orchestrator/config.py — configuration loading."""
 
-import sys
-import os
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 from opensepia.config import OrchestratorConfig, DEFAULT_EXECUTION

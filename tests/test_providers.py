@@ -1,10 +1,5 @@
 """Tests for integrations/providers/__init__.py — provider detection."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from opensepia.integrations.providers import detect_provider
 
 

@@ -28,7 +28,7 @@ def cmd_start(argv: list[str]) -> None:
         config = OrchestratorConfig.load()
         config.resolve_agent_ids(mode)
     except ConfigError as e:
-        print(f"ERROR: {e}")
+        log.error(str(e))
         sys.exit(1)
 
     # Check project is ready
@@ -49,18 +49,18 @@ def cmd_start(argv: list[str]) -> None:
     if not git_info["initialized"]:
         git_note = " (git sync disabled — no git repo in workspace)"
 
-    print(f"Starting daemon (mode: {mode}, pause: {args.pause}s{git_note})...")
+    log.info(f"Starting daemon (mode: {mode}, pause: {args.pause}s{git_note})...")
 
     try:
         daemon = OrchestratorDaemon(mode=mode, pause=args.pause, verbose=args.verbose)
         pid = daemon.start()
-        print(f"Daemon started (PID: {pid})")
-        print()
-        print(f"  opensepia status    Check status")
-        print(f"  opensepia logs -f   Follow logs")
-        print(f"  opensepia stop      Stop daemon")
+        log.success(f"Daemon started (PID: {pid})")
+        log.info("")
+        log.info("opensepia status    Check status")
+        log.info("opensepia logs -f   Follow logs")
+        log.info("opensepia stop      Stop daemon")
     except RuntimeError as e:
-        print(f"ERROR: {e}")
+        log.error(str(e))
         sys.exit(1)
 
 
@@ -70,12 +70,12 @@ def cmd_stop(argv: list[str]) -> None:
 
     state = get_daemon_status()
     if state.status in ("stopped", "crashed") or not state.is_process_alive():
-        print("Daemon is not running.")
+        log.info("Daemon is not running.")
         return
 
-    print(f"Stopping daemon (PID: {state.pid})...")
+    log.info(f"Stopping daemon (PID: {state.pid})...")
     stopped = stop_daemon()
-    print("Daemon stopped." if stopped else "Daemon was not running.")
+    log.success("Daemon stopped.") if stopped else log.info("Daemon was not running.")
 
 
 def cmd_status(argv: list[str]) -> None:
@@ -100,42 +100,42 @@ def cmd_status(argv: list[str]) -> None:
     except Exception:
         pass
 
-    print()
-    print(f"  Daemon:   {status_icons.get(state.status, state.status.upper())}")
+    log.info("")
+    log.info(f"Daemon:   {status_icons.get(state.status, state.status.upper())}")
 
     if state.is_process_alive():
-        print(f"  PID:      {state.pid}")
-        print(f"  Mode:     {state.mode}")
-        print(f"  Interval: every {state.pause_seconds}s")
+        log.info(f"PID:      {state.pid}")
+        log.info(f"Mode:     {state.mode}")
+        log.info(f"Interval: every {state.pause_seconds}s")
 
         if state.started_at:
             started = state.started_at[:19].replace("T", " ")
-            print(f"  Started:  {started}")
+            log.info(f"Started:  {started}")
 
-        print(f"  Cycles:   {state.cycle_count}")
+        log.info(f"Cycles:   {state.cycle_count}")
 
         if state.current_step:
-            print(f"  Doing:    {state.current_step}")
+            log.info(f"Doing:    {state.current_step}")
 
         if state.last_cycle_result:
             icon = {"ok": "+", "error": "!", "skipped": "~"}.get(state.last_cycle_result, "?")
             finished = (state.last_cycle_finished_at or "")[:19].replace("T", " ")
-            print(f"  Last:     [{icon}] {state.last_cycle_result} ({finished})")
+            log.info(f"Last:     [{icon}] {state.last_cycle_result} ({finished})")
 
         if state.last_cycle_errors:
             for err in state.last_cycle_errors[:3]:
-                print(f"            - {err[:80]}")
+                log.info(f"          - {err[:80]}")
 
         if state.next_cycle_at:
             next_at = state.next_cycle_at[:19].replace("T", " ")
-            print(f"  Next:     {next_at}")
+            log.info(f"Next:     {next_at}")
 
         if state.paused_at:
             paused = state.paused_at[:19].replace("T", " ")
-            print(f"  Paused:   since {paused}")
+            log.info(f"Paused:   since {paused}")
 
     if sprint_info:
-        print(f"  Project:  {sprint_info}")
+        log.info(f"Project:  {sprint_info}")
 
     # Git status
     try:
@@ -144,15 +144,15 @@ def cmd_status(argv: list[str]) -> None:
         if git_info["initialized"]:
             remote_str = git_info.get("repo_url", "")
             if git_info.get("has_remote"):
-                print(f"  Git:      {remote_str or 'configured'}")
+                log.info(f"Git:      {remote_str or 'configured'}")
             else:
-                print(f"  Git:      initialized (no remote — run: cd project/workspace && git remote add origin <url>)")
+                log.info(f"Git:      initialized (no remote — run: cd project/workspace && git remote add origin <url>)")
         else:
-            print(f"  Git:      not set up (optional — run: cd project/workspace && git init)")
+            log.info(f"Git:      not set up (optional — run: cd project/workspace && git init)")
     except Exception:
         pass
 
-    print()
+    log.info("")
 
 
 def cmd_pause(argv: list[str]) -> None:
@@ -161,17 +161,17 @@ def cmd_pause(argv: list[str]) -> None:
 
     state = get_daemon_status()
     if not state.is_process_alive():
-        print("Daemon is not running.")
+        log.info("Daemon is not running.")
         return
     if state.status == "paused":
-        print("Daemon is already paused.")
+        log.info("Daemon is already paused.")
         return
 
     try:
         send_pause_command(pause=True)
-        print("Daemon paused. Run 'opensepia resume' to continue.")
+        log.success("Daemon paused. Run 'opensepia resume' to continue.")
     except RuntimeError as e:
-        print(f"ERROR: {e}")
+        log.error(str(e))
 
 
 def cmd_resume(argv: list[str]) -> None:
@@ -180,17 +180,17 @@ def cmd_resume(argv: list[str]) -> None:
 
     state = get_daemon_status()
     if not state.is_process_alive():
-        print("Daemon is not running.")
+        log.info("Daemon is not running.")
         return
     if state.status != "paused":
-        print(f"Daemon is not paused (status: {state.status}).")
+        log.info(f"Daemon is not paused (status: {state.status}).")
         return
 
     try:
         send_pause_command(pause=False)
-        print("Daemon resumed.")
+        log.success("Daemon resumed.")
     except RuntimeError as e:
-        print(f"ERROR: {e}")
+        log.error(str(e))
 
 
 def cmd_logs(argv: list[str]) -> None:
@@ -204,8 +204,8 @@ def cmd_logs(argv: list[str]) -> None:
     log_path = project_dir / "logs" / "daemon.log"
 
     if not log_path.exists():
-        print("No daemon log file yet. Start the daemon first:")
-        print("  opensepia start")
+        log.info("No daemon log file yet. Start the daemon first:")
+        log.info("opensepia start")
         return
 
     if args.follow:

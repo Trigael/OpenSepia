@@ -1,10 +1,5 @@
 """Tests for orchestrator/board/comments.py — comment extraction and formatting."""
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from opensepia.board.comments import (
     extract_story_refs,
     extract_mr_refs,

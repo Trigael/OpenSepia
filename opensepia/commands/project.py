@@ -25,7 +25,7 @@ def cmd_init(argv: list[str]) -> None:
     board_dir = project_dir / "board"
     workspace_dir = project_dir / "workspace"
 
-    print(f"Initializing project: {args.name}")
+    log.info(f"Initializing project: {args.name}")
 
     # Create directories
     for d in ["inbox", "archive", ".snapshot"]:
@@ -130,18 +130,18 @@ def cmd_init(argv: list[str]) -> None:
             encoding="utf-8",
         )
 
-    print(f"Project initialized!")
-    print(f"  Board:     {board_dir}")
-    print(f"  Workspace: {workspace_dir}")
-    print()
-    print(f"Next steps:")
-    print(f"  1. opensepia start                 # start running cycles")
-    print()
-    print(f"Optional — enable git sync:")
-    print(f"  cd {workspace_dir}")
-    print(f"  git init")
-    print(f"  git remote add origin <your-repo-url>")
-    print(f"  # Then set GIT_REPO_URL and GIT_TOKEN in config/.env")
+    log.success("Project initialized!")
+    log.info(f"Board:     {board_dir}")
+    log.info(f"Workspace: {workspace_dir}")
+    log.info("")
+    log.info("Next steps:")
+    log.info("1. opensepia start                 # start running cycles")
+    log.info("")
+    log.info("Optional — enable git sync:")
+    log.info(f"cd {workspace_dir}")
+    log.info("git init")
+    log.info("git remote add origin <your-repo-url>")
+    log.info("# Then set GIT_REPO_URL and GIT_TOKEN in config/.env")
 
 
 def cmd_reset(argv: list[str]) -> None:
@@ -156,14 +156,14 @@ def cmd_reset(argv: list[str]) -> None:
     project_dir = tool_dir / "project"
 
     if not args.yes:
-        print("This will delete:")
-        print(f"  - {project_dir / 'board'}/ (sprint, backlog, inbox)")
-        print(f"  - {project_dir / 'workspace' / 'src'}/")
-        print(f"  - {project_dir / 'logs'}/")
-        print()
-        confirm = input("Are you sure? (yes/no): ")
+        log.warn("This will delete:")
+        log.info(f"- {project_dir / 'board'}/ (sprint, backlog, inbox)")
+        log.info(f"- {project_dir / 'workspace' / 'src'}/")
+        log.info(f"- {project_dir / 'logs'}/")
+        log.info("")
+        confirm = input("  Are you sure? (yes/no): ")
         if confirm.lower() != "yes":
-            print("Aborted.")
+            log.info("Aborted.")
             return
 
     # Stop daemon if running
@@ -171,7 +171,7 @@ def cmd_reset(argv: list[str]) -> None:
         from opensepia.daemon import stop_daemon, get_daemon_status
         state = get_daemon_status()
         if state.is_process_alive():
-            print("Stopping daemon...")
+            log.info("Stopping daemon...")
             stop_daemon()
     except Exception:
         pass
@@ -181,23 +181,23 @@ def cmd_reset(argv: list[str]) -> None:
         _shutil.rmtree(board)
     for d in ["inbox", "archive", ".snapshot"]:
         (board / d).mkdir(parents=True, exist_ok=True)
-    print("  Board cleared")
+    log.success("Board cleared")
 
     workspace_src = project_dir / "workspace" / "src"
     if workspace_src.exists():
         _shutil.rmtree(workspace_src)
     workspace_src.mkdir(parents=True, exist_ok=True)
     (workspace_src / ".gitkeep").touch()
-    print("  Workspace cleared")
+    log.success("Workspace cleared")
 
     logs = project_dir / "logs"
     if logs.exists():
         _shutil.rmtree(logs)
     logs.mkdir(parents=True, exist_ok=True)
-    print("  Logs cleared")
+    log.success("Logs cleared")
 
-    print()
-    print("Reset complete. Run 'opensepia init <name>' to start a new project.")
+    log.info("")
+    log.success("Reset complete. Run 'opensepia init <name>' to start a new project.")
 
 
 def cmd_setup(argv: list[str]) -> None:
@@ -208,7 +208,7 @@ def cmd_setup(argv: list[str]) -> None:
     tool_dir = Path(__file__).parent.parent.parent
 
     log.banner(["OpenSepia — Setup Wizard"])
-    print()
+    log.info("")
 
     # Step 1: Check Claude CLI
     log.header("1. Claude Code CLI")
@@ -223,7 +223,7 @@ def cmd_setup(argv: list[str]) -> None:
         log.error("Claude Code CLI not found")
         log.info("Install: npm install -g @anthropic-ai/claude-code")
         log.info("Then: claude login")
-        print()
+        log.info("")
         confirm = input("  Continue without Claude CLI? (yes/no): ")
         if confirm.lower() != "yes":
             return
@@ -301,6 +301,6 @@ def cmd_setup(argv: list[str]) -> None:
 
     # Done
     log.banner(["Setup complete!"])
-    print()
+    log.info("")
     log.info("Next: opensepia start")
-    print()
+    log.info("")

@@ -15,15 +15,12 @@ from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.agents.context import build_agent_context
 from opensepia.agents.invoker import invoke_agent
-from opensepia.config import DEFAULT_EXECUTION
+from opensepia.config import DEFAULT_EXECUTION, MAX_STANDUP_CHARS, MAX_INBOX_CHARS
 from opensepia.agents.writer import (
     apply_output, read_file_safe, write_file, archive_inbox,
 )
 
 logger = logging.getLogger(__name__)
-
-MAX_STANDUP_CHARS = 2000
-MAX_INBOX_CHARS = 1500
 
 
 def initialize_standup_file(board_dir: Path, sprint_num: int, cycle: int) -> None:

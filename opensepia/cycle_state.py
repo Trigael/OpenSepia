@@ -10,6 +10,7 @@ import json
 import os
 import logging
 from dataclasses import dataclass, field, asdict
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -64,7 +65,6 @@ class CycleState:
 
     def mark_step_complete(self, step_name: str, state_path: Path) -> None:
         """Mark a step as completed and save."""
-        from datetime import datetime
         if step_name not in self.completed_steps:
             self.completed_steps.append(step_name)
         self.current_step = None
@@ -73,7 +73,6 @@ class CycleState:
 
     def mark_agent_complete(self, agent_id: str, state_path: Path) -> None:
         """Mark an agent as completed within the agent_runner step."""
-        from datetime import datetime
         if agent_id not in self.completed_agents:
             self.completed_agents.append(agent_id)
         self.updated_at = datetime.now().isoformat()
@@ -81,7 +80,6 @@ class CycleState:
 
     def mark_completed(self, state_path: Path) -> None:
         """Mark the entire cycle as completed."""
-        from datetime import datetime
         self.status = "completed"
         self.current_step = None
         self.updated_at = datetime.now().isoformat()
@@ -89,7 +87,6 @@ class CycleState:
 
     def mark_failed(self, state_path: Path) -> None:
         """Mark the cycle as failed."""
-        from datetime import datetime
         self.status = "failed"
         self.updated_at = datetime.now().isoformat()
         self.save(state_path)

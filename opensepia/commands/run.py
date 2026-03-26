@@ -162,7 +162,7 @@ def cmd_run(argv: list[str]) -> None:
     try:
         config = OrchestratorConfig.load(project_dir=project_dir)
     except ConfigError as e:
-        print(f"ERROR: {e}")
+        log.error(str(e))
         sys.exit(1)
 
     # Check project is ready
@@ -180,7 +180,7 @@ def cmd_run(argv: list[str]) -> None:
     try:
         agent_ids = config.resolve_agent_ids(mode)
     except ConfigError as e:
-        print(f"ERROR: {e}")
+        log.error(str(e))
         sys.exit(1)
 
     # Git status hint (not an error — git is optional)
