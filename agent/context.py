@@ -153,7 +153,7 @@ def _fetch_provider_comments(board_dir: Path, base_dir: Path) -> str:
     try:
         sys.path.insert(0, str(base_dir))
         from integrations.providers import detect_provider
-        from scripts.sync_comments import get_active_story_ids, fetch_comments_for_context
+        from orchestrator.board.comments import get_active_story_ids, fetch_comments_for_context
 
         provider = detect_provider()
         if provider and provider.enabled:

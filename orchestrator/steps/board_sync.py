@@ -2,10 +2,8 @@
 AI Dev Team — Board sync step.
 
 Syncs board/backlog.md and board/sprint.md to provider issues.
-Delegates to scripts/sync_board.py.
 """
 
-import subprocess
 import logging
 
 from orchestrator.pipeline import PipelineContext
@@ -26,20 +24,28 @@ class BoardSyncStep:
         print("  Board sync...")
 
         try:
-            result = subprocess.run(
-                ["python3", "scripts/sync_board.py"],
-                capture_output=True,
-                text=True,
-                cwd=str(ctx.project_dir),
-                timeout=120,
-            )
+            from integrations.providers import detect_provider
+            from orchestrator.board.sync import parse_backlog, parse_sprint_statuses, sync_to_provider
 
-            if result.stdout.strip():
-                for line in result.stdout.strip().split("\n"):
-                    print(f"  {line}")
+            provider = detect_provider()
+            if not provider or not provider.enabled:
+                print("  Board sync: no provider configured, skipping")
+                return ctx
 
-            if result.returncode != 0:
-                logger.warning("Board sync returned non-zero: %s", result.stderr[:200])
+            backlog_path = ctx.board_dir / "backlog.md"
+            sprint_path = ctx.board_dir / "sprint.md"
+
+            if not backlog_path.exists():
+                logger.warning("backlog.md does not exist, skipping board sync")
+                return ctx
+
+            items = parse_backlog(backlog_path)
+            sprint_statuses = {}
+            if sprint_path.exists():
+                sprint_statuses = parse_sprint_statuses(sprint_path)
+
+            created, updated = sync_to_provider(items, sprint_statuses, provider, ctx.board_dir)
+            print(f"  Board sync: {created} created, {updated} updated")
 
         except Exception as e:
             logger.warning("Board sync failed: %s", e)

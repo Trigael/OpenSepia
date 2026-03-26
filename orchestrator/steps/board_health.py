@@ -64,15 +64,13 @@ class BoardHealthStep:
 
     def _try_restore(self, ctx: PipelineContext, board_dir: Path) -> None:
         """Attempt restore from snapshot, then from provider."""
-        import sys
-        sys.path.insert(0, str(ctx.project_dir))
+        from orchestrator.board.restore import restore_from_snapshot, restore_from_provider
 
         # Try snapshot first
         snapshot_dir = board_dir / ".snapshot"
         if snapshot_dir.exists():
             logger.info("Attempting board restore from snapshot...")
             try:
-                from scripts.restore_board import restore_from_snapshot
                 restore_from_snapshot(board_dir)
             except Exception as e:
                 logger.warning("Snapshot restore failed: %s", e)
@@ -88,7 +86,6 @@ class BoardHealthStep:
         if still_missing:
             logger.info("Snapshot restore insufficient, trying provider...")
             try:
-                from scripts.restore_board import restore_from_provider
                 restore_from_provider(board_dir)
             except Exception as e:
                 logger.warning("Provider restore failed: %s", e)

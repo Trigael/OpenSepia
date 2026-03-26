@@ -151,7 +151,7 @@ def apply_output(
     # Provider comments (WRITE path)
     try:
         from integrations.providers import detect_provider
-        from scripts.sync_comments import post_agent_messages_to_provider, reset_mr_cache
+        from orchestrator.board.comments import post_agent_messages_to_provider, reset_mr_cache
         provider = detect_provider()
         if provider and provider.enabled:
             reset_mr_cache()

@@ -8,13 +8,19 @@ Autonomous AI development team framework. 9 Claude-powered agents work as an agi
 
 ### Core Packages
 
-- `orchestrator/` — Pipeline-based orchestrator (replaces bash script)
-  - `cli.py` — argparse CLI, mode routing, entry point
-  - `config.py` — Centralized config loading (agents.yaml, project.yaml, .env)
+- `orchestrator/` — Pipeline-based orchestrator
+  - `cli.py` — Command router (`opensepia` entry point)
+  - `config.py` — Centralized config loading + mode resolution
   - `errors.py` — Error hierarchy (ConfigError, AgentError, GitSyncError, etc.)
   - `lockfile.py` — PID-based process lock management
   - `pipeline.py` — Step protocol + Pipeline runner with error handling
-  - `steps/` — Individual pipeline steps (board_health, sprint_check, agent_runner, standup_sync, merge_mrs, git_sync, board_sync, logging_step, alerting)
+  - `daemon.py` — Background daemon with signal-based control
+  - `daemon_state.py` — Persistent daemon state (JSON)
+  - `steps/` — Pipeline steps (board_health, sprint_check, agent_runner, standup_sync, merge_mrs, git_sync, board_sync, logging_step, alerting)
+  - `board/` — Board management modules
+    - `sync.py` — Sync board state to provider issues
+    - `comments.py` — Sync agent comments to/from provider
+    - `restore.py` — Board health check and recovery
 
 - `agent/` — Agent execution modules
   - `context.py` — Build agent prompt from board state, workspace, inbox
@@ -22,15 +28,6 @@ Autonomous AI development team framework. 9 Claude-powered agents work as an agi
   - `parser.py` — Parse `---FILES---` output format
   - `writer.py` — Apply agent output to disk with security checks
   - `workspace.py` — Directory tree listing for context
-
-### Scripts (thin wrappers / standalone tools)
-
-- `scripts/orchestrator_cli.sh` — Shim that delegates to `python -m orchestrator`
-- `scripts/run_agent_cli.py` — Agent runner CLI (imports from `agent/` package)
-- `scripts/sync_board.py` — Syncs board/backlog.md + sprint.md → provider issues
-- `scripts/sync_comments.py` — Syncs agent messages → issue comments
-- `scripts/restore_board.py` — Board health check and restore from snapshot/provider
-- `scripts/merge_approved_mrs.py` — Auto-merges approved MRs/PRs
 
 ### Integrations
 
@@ -41,9 +38,18 @@ Autonomous AI development team framework. 9 Claude-powered agents work as an agi
 - `integrations/docker_client.py` — Docker/docker-compose operations
 - `integrations/logging_config.py` — Shared logging + env loader
 
+### Scripts (thin CLI wrappers)
+
+- `scripts/orchestrator_cli.sh` — Shim that delegates to `python -m orchestrator`
+- `scripts/run_agent_cli.py` — Legacy agent runner (wraps `orchestrator.cli.cmd_run`)
+- `scripts/sync_board.py` — Standalone board sync CLI
+- `scripts/sync_comments.py` — Standalone comment sync CLI
+- `scripts/restore_board.py` — Standalone board restore CLI
+- `scripts/merge_approved_mrs.py` — Standalone MR merge CLI
+
 ### Configuration
 
-- `config/agents.yaml` — Agent definitions and system prompts (9 agents)
+- `config/agents.yaml` — Agent definitions, modes, execution parameters, system prompts
 - `config/project.yaml` — Sprint counter, project description, tech stack
 - `config/.env` — Tokens and credentials (gitignored, see .env.example)
 
@@ -59,20 +65,18 @@ Autonomous AI development team framework. 9 Claude-powered agents work as an agi
 ## Running
 
 ```bash
-# Initialize project
-python3 scripts/init_project.py "Name" "Description"
+# CLI entry point
+opensepia help
 
-# Run one cycle (all core agents) — preferred
-python3 -m orchestrator dev-team
+# Background daemon
+opensepia start --mode dev-team --pause 60
+opensepia status
+opensepia logs -f
+opensepia stop
 
-# Alternative (via shim, backward compatible)
-./scripts/orchestrator_cli.sh dev-team
-
-# Run single agent
-python3 -m orchestrator po
-
-# Dry run (show context without calling Claude)
-python3 -m orchestrator dev-team --dry-run
+# Single cycle
+opensepia run dev-team
+opensepia run po --dry-run
 
 # Run tests
 python3 -m pytest tests/ -v
@@ -87,6 +91,10 @@ Pipeline: BoardHealth → SprintCheck → Snapshot → AgentRunner → SprintSyn
 ```
 
 Non-critical steps log errors and continue. Critical steps (config, lock) abort the pipeline. All errors are collected in `PipelineContext.errors`.
+
+Agent modes and execution parameters are defined in `config/agents.yaml`:
+- `modes:` — Named mode definitions with agent lists and aliases
+- `execution:` — timeout, max_retries, retry_delay, pause_between_agents (with per-agent overrides)
 
 ## Code Style
 

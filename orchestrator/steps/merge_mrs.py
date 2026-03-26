@@ -1,10 +1,7 @@
 """
 AI Dev Team — Auto-merge approved MRs step.
-
-Delegates to scripts/merge_approved_mrs.py.
 """
 
-import subprocess
 import logging
 
 from orchestrator.pipeline import PipelineContext
@@ -25,20 +22,17 @@ class MergeMRsStep:
         print("  Auto-merge approved MRs...")
 
         try:
-            result = subprocess.run(
-                ["python3", "scripts/merge_approved_mrs.py"],
-                capture_output=True,
-                text=True,
-                cwd=str(ctx.project_dir),
-                timeout=120,
-            )
+            from integrations.providers import detect_provider
+            from scripts.merge_approved_mrs import merge_approved_mrs
 
-            if result.stdout.strip():
-                for line in result.stdout.strip().split("\n"):
-                    print(f"  {line}")
+            client = detect_provider()
+            if not client or not client.enabled:
+                print("  Auto-merge: no provider configured, skipping")
+                return ctx
 
-            if result.returncode != 0:
-                logger.warning("Auto-merge returned non-zero: %s", result.stderr[:200])
+            merged, closed = merge_approved_mrs(client)
+            if merged or closed:
+                print(f"  Auto-merge: {merged} merged, {closed} closed")
 
         except Exception as e:
             logger.warning("Auto-merge failed: %s", e)

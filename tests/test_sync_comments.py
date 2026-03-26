@@ -1,11 +1,11 @@
-"""Tests for scripts/sync_comments.py — comment extraction and formatting."""
+"""Tests for orchestrator/board/comments.py — comment extraction and formatting."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts.sync_comments import (
+from orchestrator.board.comments import (
     extract_story_refs,
     extract_mr_refs,
     truncate_for_comment,

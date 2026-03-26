@@ -4,7 +4,6 @@ AI Dev Team — Standup sync step.
 Posts standup.md content to provider issues.
 """
 
-import sys
 import logging
 from pathlib import Path
 
@@ -27,9 +26,8 @@ class StandupSyncStep:
         print("  Standup -> provider sync...")
 
         try:
-            sys.path.insert(0, str(ctx.project_dir))
             from integrations.providers import detect_provider
-            from scripts.sync_comments import post_standup_to_provider
+            from orchestrator.board.comments import post_standup_to_provider
 
             client = detect_provider()
             if client and client.enabled:
