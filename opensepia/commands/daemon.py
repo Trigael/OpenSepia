@@ -1,9 +1,7 @@
-"""Daemon commands: start, stop, status, pause, resume, logs."""
+"""Daemon commands: start, stop, status, pause, resume."""
 
 import sys
-import time
 import argparse
-import collections
 from pathlib import Path
 
 from opensepia import log
@@ -79,7 +77,9 @@ def cmd_stop(argv: list[str]) -> None:
 
 
 def cmd_status(argv: list[str]) -> None:
-    """Show daemon and project status."""
+    """Show daemon, project, and last cycle status."""
+    import json as _json
+    import os
     from opensepia.daemon import get_daemon_status
 
     state = get_daemon_status()
@@ -92,67 +92,108 @@ def cmd_status(argv: list[str]) -> None:
         "crashed": "! CRASHED",
     }
 
-    # Load project info if available
-    sprint_info = ""
+    # Load config
+    config = None
     try:
         config = OrchestratorConfig.load()
-        sprint_info = f"Sprint {config.sprint_num}, Cycle {config.cycle_num}"
     except Exception:
         pass
 
-    log.info("")
-    log.info(f"Daemon:   {status_icons.get(state.status, state.status.upper())}")
+    # --- Daemon ---
+    print()
+    log.info(f"Daemon:    {status_icons.get(state.status, state.status.upper())}")
 
     if state.is_process_alive():
-        log.info(f"PID:      {state.pid}")
-        log.info(f"Mode:     {state.mode}")
-        log.info(f"Interval: every {state.pause_seconds}s")
+        log.info(f"PID:       {state.pid}")
+        log.info(f"Mode:      {state.mode}")
+        log.info(f"Interval:  every {state.pause_seconds}s")
 
         if state.started_at:
-            started = state.started_at[:19].replace("T", " ")
-            log.info(f"Started:  {started}")
+            log.info(f"Started:   {state.started_at[:19].replace('T', ' ')}")
 
-        log.info(f"Cycles:   {state.cycle_count}")
+        log.info(f"Cycles:    {state.cycle_count}")
 
         if state.current_step:
-            log.info(f"Doing:    {state.current_step}")
+            log.info(f"Doing:     {state.current_step}")
 
         if state.last_cycle_result:
             icon = {"ok": "+", "error": "!", "skipped": "~"}.get(state.last_cycle_result, "?")
             finished = (state.last_cycle_finished_at or "")[:19].replace("T", " ")
-            log.info(f"Last:     [{icon}] {state.last_cycle_result} ({finished})")
-
-        if state.last_cycle_errors:
-            for err in state.last_cycle_errors[:3]:
-                log.info(f"          - {err[:80]}")
+            log.info(f"Last:      [{icon}] {state.last_cycle_result} ({finished})")
 
         if state.next_cycle_at:
-            next_at = state.next_cycle_at[:19].replace("T", " ")
-            log.info(f"Next:     {next_at}")
+            log.info(f"Next:      {state.next_cycle_at[:19].replace('T', ' ')}")
 
         if state.paused_at:
-            paused = state.paused_at[:19].replace("T", " ")
-            log.info(f"Paused:   since {paused}")
+            log.info(f"Paused:    since {state.paused_at[:19].replace('T', ' ')}")
 
-    if sprint_info:
-        log.info(f"Project:  {sprint_info}")
+    # --- Project ---
+    if config:
+        proj = config.project.get("project", {})
+        name = proj.get("name", "(not set)")
+        log.info(f"Project:   {name}")
+        log.info(f"Sprint:    {config.sprint_num}, Cycle {config.cycle_num}")
 
-    # Git status
-    try:
-        config = OrchestratorConfig.load()
+        # Board summary — count stories by status
+        sprint_path = config.board_dir / "sprint.md"
+        if sprint_path.exists():
+            import re
+            content = sprint_path.read_text(encoding="utf-8")
+            todo = len(re.findall(r'- \[ \]', content))
+            done = len(re.findall(r'- \[x\]', content, re.IGNORECASE))
+            in_progress = len(re.findall(r'IN.PROGRESS', content, re.IGNORECASE))
+            review = len(re.findall(r'REVIEW', content, re.IGNORECASE))
+            if todo or done or in_progress:
+                log.info(f"Stories:   {done} done, {in_progress} in progress, {review} review, {todo} todo")
+
+        # Last cycle from log files
+        if not state.is_process_alive():
+            logs_dir = config.logs_dir
+            if logs_dir.exists():
+                log_files = sorted(logs_dir.glob("cycle_*.json"), reverse=True)
+                if log_files:
+                    try:
+                        with open(log_files[0], encoding="utf-8") as f:
+                            last = _json.load(f)
+                        ts = last.get("timestamp", "")
+                        if isinstance(ts, str) and "T" in ts:
+                            ts = ts[:19].replace("T", " ")
+                        status = last.get("status", "?")
+                        ok_count = last.get("agents_ok_count", 0)
+                        fail_count = last.get("agents_failed_count", 0)
+                        mode = last.get("mode", "?")
+                        icon = "+" if status == "ok" else "!"
+                        log.info(f"Last run:  [{icon}] {mode}, {ok_count} ok, {fail_count} failed ({ts})")
+                    except Exception:
+                        pass
+
+    # --- Provider ---
+    if config:
+        board_url = os.environ.get("BOARD_SERVER_URL", "")
+        gl = os.environ.get("GITLAB_URL", "")
+        gh = os.environ.get("GITHUB_REPO", "")
+        if board_url:
+            log.info(f"Provider:  Board Server ({board_url})")
+        elif gl:
+            log.info(f"Provider:  GitLab ({gl})")
+        elif gh:
+            log.info(f"Provider:  GitHub ({gh})")
+        else:
+            log.info(f"Provider:  (not configured)")
+
+    # --- Git ---
+    if config:
         git_info = check_workspace_git(config)
         if git_info["initialized"]:
-            remote_str = git_info.get("repo_url", "")
+            remote = git_info.get("repo_url", "")
             if git_info.get("has_remote"):
-                log.info(f"Git:      {remote_str or 'configured'}")
+                log.info(f"Git:       {remote or 'configured'}")
             else:
-                log.info(f"Git:      initialized (no remote — run: cd project/workspace && git remote add origin <url>)")
+                log.info(f"Git:       initialized (no remote)")
         else:
-            log.info(f"Git:      not set up (optional — run: cd project/workspace && git init)")
-    except Exception:
-        pass
+            log.info(f"Git:       not set up")
 
-    log.info("")
+    print()
 
 
 def cmd_pause(argv: list[str]) -> None:
@@ -193,45 +234,4 @@ def cmd_resume(argv: list[str]) -> None:
         log.error(str(e))
 
 
-def cmd_logs(argv: list[str]) -> None:
-    """View daemon log file."""
-    parser = argparse.ArgumentParser(prog="opensepia logs", description="View daemon logs")
-    parser.add_argument("--lines", "-n", type=int, default=50, help="Number of lines (default: 50)")
-    parser.add_argument("--follow", "-f", action="store_true", help="Follow log output")
-    args = parser.parse_args(argv)
-
-    project_dir = Path(__file__).parent.parent.parent
-    log_path = project_dir / "logs" / "daemon.log"
-
-    if not log_path.exists():
-        log.info("No daemon log file yet. Start the daemon first:")
-        log.info("opensepia start")
-        return
-
-    if args.follow:
-        _tail_follow(log_path, args.lines)
-    else:
-        _tail_lines(log_path, args.lines)
-
-
-def _tail_lines(path: Path, n: int) -> None:
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        lines = collections.deque(f, maxlen=n)
-    for line in lines:
-        print(line, end="")
-
-
-def _tail_follow(path: Path, n: int) -> None:
-    _tail_lines(path, n)
-    print("--- following (Ctrl+C to stop) ---")
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
-            f.seek(0, 2)
-            while True:
-                line = f.readline()
-                if line:
-                    print(line, end="")
-                else:
-                    time.sleep(0.5)
-    except KeyboardInterrupt:
-        print("\n--- stopped ---")
+    # cmd_logs moved to observe.py (now supports --standup, --cycle, not just daemon log)

@@ -1,19 +1,7 @@
-# Architecture — My Project
+# Architecture — Board Server v2
 
 ## Overview
-(Will be filled in after MVP definition)
+(To be defined after MVP)
 
 ## Tech Stack
 (To be decided)
-
-## Directory Structure
-```
-workspace/
-├── src/          # Source code
-├── tests/        # Tests
-├── docs/         # Documentation
-└── config/       # Configuration
-```
-
-## Decisions
-(See decisions.md)

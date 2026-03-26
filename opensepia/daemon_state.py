@@ -55,12 +55,13 @@ class DaemonState:
         if not state_path.exists():
             return cls()
         try:
-            data = json.loads(state_path.read_text(encoding="utf-8"))
-            # Filter to only known fields
+            data = json.loads(state_path.read_text(encoding="utf-8", errors="replace"))
+            if not isinstance(data, dict):
+                return cls()
             known = {f.name for f in cls.__dataclass_fields__.values()}
             filtered = {k: v for k, v in data.items() if k in known}
             return cls(**filtered)
-        except (json.JSONDecodeError, TypeError, KeyError) as e:
+        except (json.JSONDecodeError, TypeError, KeyError, ValueError, UnicodeDecodeError) as e:
             logger.warning("Corrupt daemon state file, using defaults: %s", e)
             return cls()
 

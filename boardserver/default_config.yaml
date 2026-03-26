@@ -1,0 +1,113 @@
+# =============================================================================
+# Board Server Configuration
+# Defines item types, fields, events, and server settings.
+# =============================================================================
+
+server:
+  port: 8080
+  host: "0.0.0.0"
+  db: "board.db"
+
+# =============================================================================
+# Item types — each type has its own fields and ID prefix.
+# The API is generic: POST /api/items with {"type": "story", ...}
+# =============================================================================
+item_types:
+  story:
+    id_prefix: "STORY"
+    fields:
+      title:
+        type: string
+        required: true
+      description:
+        type: text
+      status:
+        type: enum
+        values: [todo, in_progress, review, testing, done, blocked]
+        default: todo
+      priority:
+        type: enum
+        values: [critical, high, medium, low]
+        default: medium
+      assigned:
+        type: string
+      sprint:
+        type: integer
+        default: 1
+      acceptance_criteria:
+        type: text
+
+  bug:
+    id_prefix: "BUG"
+    fields:
+      title:
+        type: string
+        required: true
+      description:
+        type: text
+      status:
+        type: enum
+        values: [todo, in_progress, review, testing, done, blocked]
+        default: todo
+      severity:
+        type: enum
+        values: [critical, high, medium, low]
+        default: medium
+      assigned:
+        type: string
+      related_story:
+        type: string
+
+# =============================================================================
+# Agents — known agent identities
+# =============================================================================
+agents:
+  - id: po
+    name: Product Owner
+  - id: pm
+    name: Project Manager
+  - id: dev1
+    name: Developer 1
+  - id: dev2
+    name: Developer 2
+  - id: devops
+    name: DevOps Engineer
+  - id: tester
+    name: QA Engineer
+  - id: sec_analyst
+    name: Security Analyst
+  - id: sec_engineer
+    name: Security Engineer
+  - id: sec_pentester
+    name: Penetration Tester
+  - id: human
+    name: Human
+
+# =============================================================================
+# Events — triggered on item/comment changes
+# Available events: item_created, item_updated, status_changed,
+#                   comment_added, inbox_received
+# =============================================================================
+events:
+  status_changed:
+    - action: notify_inbox
+      agent: "{assigned}"
+      message: "{item_type} {item_id} status changed to {new_value}"
+
+  comment_added:
+    - action: notify_inbox
+      agent: "{item.assigned}"
+      message: "New comment on {item_type} {item_id} from {agent}"
+
+  item_created:
+    - action: notify_inbox
+      agent: po
+      message: "New {item_type} created: {item_id} {title}"
+
+# =============================================================================
+# Webhooks — HTTP callbacks on events (optional)
+# =============================================================================
+webhooks: []
+  # - url: "http://localhost:9000/hook"
+  #   events: [status_changed, comment_added]
+  #   active: true
