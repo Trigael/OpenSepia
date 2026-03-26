@@ -16,7 +16,7 @@ opensepia/                  # App source code (single package)
   agents/                   # Agent execution
     context.py, invoker.py, parser.py, writer.py, workspace.py
   board/                    # Board management
-    sync.py, comments.py, restore.py
+    sync.py, comments.py, restore.py, merge.py
   steps/                    # Pipeline steps (11 steps)
   integrations/             # Provider APIs (GitLab, GitHub, git, docker)
 
@@ -32,7 +32,6 @@ project/                    # The product being built (swappable, separate repo)
 
 tests/                      # Test suite
 bin/opensepia               # CLI entry point
-scripts/                    # Legacy CLI wrappers
 ```
 
 The `project/` folder is the product OpenSepia is working on. It can be swapped out for a different project — just point to a different folder with the same structure (board/, workspace/, project.yaml).
@@ -49,12 +48,15 @@ The `project/` folder is the product OpenSepia is working on. It can be swapped 
 
 ```bash
 opensepia help                   # Show all commands
+opensepia init "Name" "Desc"     # Initialize a new project
 opensepia start                  # Start background daemon
 opensepia status                 # Check status
 opensepia logs -f                # Follow live logs
 opensepia stop                   # Stop daemon
 opensepia run dev-team           # Single cycle
 opensepia run po --dry-run       # Preview without calling Claude
+opensepia monitor                # View cycle statistics
+opensepia reset                  # Reset project state
 python3 -m pytest tests/ -v      # Run tests
 ```
 

@@ -45,13 +45,16 @@ Usage:
   opensepia <command> [options]
 
 Commands:
-  run [mode]            Run a single cycle, then exit
+  init <name> [desc]    Initialize a new project
   start [--mode MODE]   Start the daemon (runs cycles in background)
   stop                  Stop the running daemon
   status                Show current status
   pause                 Pause the daemon after current cycle
   resume                Resume a paused daemon
+  run [mode]            Run a single cycle, then exit
   logs [-f] [-n N]      View daemon logs
+  monitor [days]        Show cycle statistics
+  reset                 Reset project (clears board, workspace, logs)
 
 Run modes:
   dev-team              6 agents: PO, PM, Dev1, Dev2, DevOps, Tester (default)
@@ -62,23 +65,18 @@ Run modes:
                         sec_analyst, sec_engineer, sec_pentester)
 
 Options:
-  run [mode] --dry-run       Show agent context without calling Claude
-  run [mode] --no-increment  Don't increment cycle counter
   start --mode MODE          Daemon mode (default: dev-team)
   start --pause SECS         Seconds between cycles (default: 60)
+  run [mode] --dry-run       Show agent context without calling Claude
   logs -f                    Follow log output (like tail -f)
-  logs -n N                  Show last N lines (default: 50)
 
 Examples:
-  opensepia start                        Start with defaults (dev-team, 60s pause)
-  opensepia start --mode minimal -p 120  Start minimal mode, 2min between cycles
-  opensepia status                       Check what's happening
-  opensepia logs -f                      Watch live logs
-  opensepia pause                        Pause after current cycle finishes
-  opensepia resume                       Resume cycling
-  opensepia stop                         Graceful shutdown
-  opensepia run po                       Run just the Product Owner agent once
-  opensepia run dev-team --dry-run       Preview without calling Claude
+  opensepia init "My API" "REST API with FastAPI"
+  opensepia start
+  opensepia status
+  opensepia logs -f
+  opensepia stop
+  opensepia run po --dry-run
 """
 
 
@@ -408,10 +406,288 @@ def _tail_follow(path: Path, n: int) -> None:
 
 
 # =============================================================================
+# Command: init
+# =============================================================================
+
+def cmd_init(argv: list[str]) -> None:
+    """Initialize a new project."""
+    import yaml as _yaml
+
+    parser = argparse.ArgumentParser(prog="opensepia init", description="Initialize a new project")
+    parser.add_argument("name", help="Project name")
+    parser.add_argument("description", nargs="?", default="New project", help="Project description")
+    args = parser.parse_args(argv)
+
+    tool_dir = Path(__file__).parent.parent
+    project_dir = tool_dir / "project"
+    board_dir = project_dir / "board"
+    workspace_dir = project_dir / "workspace"
+
+    print(f"Initializing project: {args.name}")
+
+    # Create directories
+    for d in ["inbox", "archive", ".snapshot"]:
+        (board_dir / d).mkdir(parents=True, exist_ok=True)
+    for d in ["src", "tests", "docs", "config"]:
+        (workspace_dir / d).mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    (board_dir / "project.md").write_text(
+        f"# {args.name}\n\n## Description\n{args.description}\n\n"
+        f"## Status\n- **Created**: {now}\n- **Phase**: Initialization\n- **Sprint**: 1\n\n"
+        f"## Goals\n- [ ] Define product vision and MVP\n- [ ] Create initial architecture\n"
+        f"- [ ] Set up development environment\n- [ ] Implement first feature\n",
+        encoding="utf-8",
+    )
+
+    (board_dir / "backlog.md").write_text(
+        f"# Product Backlog — {args.name}\n\n"
+        f"## CRITICAL\n\n## HIGH\n"
+        f"### STORY-001: Define MVP scope\n"
+        f"**Priority**: HIGH\n**Status**: TODO\n\n"
+        f"## MEDIUM\n"
+        f"### STORY-002: Set up development environment\n"
+        f"**Priority**: MEDIUM\n**Status**: TODO\n\n"
+        f"## LOW\n\n## DONE\n",
+        encoding="utf-8",
+    )
+
+    (board_dir / "sprint.md").write_text(
+        f"# Sprint 1 — Initialization\n\n"
+        f"**Goal**: Define the project, create a foundation\n"
+        f"**Start**: {now}\n\n"
+        f"## TODO\n- [ ] STORY-001: Define MVP scope (PO)\n"
+        f"- [ ] STORY-002: Set up development environment (DevOps + Dev)\n\n"
+        f"## IN PROGRESS\n\n## DONE\n\n## BLOCKED\n",
+        encoding="utf-8",
+    )
+
+    (board_dir / "architecture.md").write_text(
+        f"# Architecture — {args.name}\n\n## Overview\n(To be defined after MVP)\n\n"
+        f"## Tech Stack\n(To be decided)\n",
+        encoding="utf-8",
+    )
+
+    (board_dir / "decisions.md").write_text(
+        f"# Decisions (Decision Log)\n\n"
+        f"### DEC-001: Project initialization ({datetime.now().strftime('%Y-%m-%d')})\n"
+        f"- **Context**: New project {args.name}\n"
+        f"- **Decision**: Starting Sprint 1\n- **Who**: System (init)\n",
+        encoding="utf-8",
+    )
+
+    # Create agent inboxes
+    try:
+        config = OrchestratorConfig.load()
+        agent_ids = config.get_all_agent_ids()
+    except ConfigError:
+        agent_ids = ["po", "pm", "dev1", "dev2", "devops", "tester",
+                     "sec_analyst", "sec_engineer", "sec_pentester"]
+
+    for aid in agent_ids:
+        inbox = board_dir / "inbox" / f"{aid}.md"
+        if not inbox.exists():
+            inbox.write_text("", encoding="utf-8")
+
+    # Seed PO inbox
+    (board_dir / "inbox" / "po.md").write_text(
+        f"## System message — Initialization\n\n"
+        f"Project **{args.name}** has just been created.\n\n"
+        f"**Description**: {args.description}\n\n"
+        f"### Your first task:\n"
+        f"1. Define the product vision\n"
+        f"2. Break down the MVP into user stories\n"
+        f"3. Prioritize the backlog\n"
+        f"4. Send PM instructions for Sprint 1\n",
+        encoding="utf-8",
+    )
+
+    # Update project.yaml
+    project_file = project_dir / "project.yaml"
+    if project_file.exists():
+        with open(project_file, "r") as f:
+            project_cfg = _yaml.safe_load(f) or {}
+    else:
+        project_cfg = {"project": {}, "sprint": {}, "limits": {}}
+
+    project_cfg.setdefault("project", {})["name"] = args.name
+    project_cfg["project"]["description"] = args.description
+    project_cfg.setdefault("sprint", {})["current_sprint"] = 1
+    project_cfg["sprint"]["current_cycle"] = 0
+
+    with open(project_file, "w") as f:
+        _yaml.dump(project_cfg, f, default_flow_style=False, allow_unicode=True)
+
+    print(f"Project initialized!")
+    print(f"  Board:     {board_dir}")
+    print(f"  Workspace: {workspace_dir}")
+    print()
+    print(f"Next: opensepia start")
+
+
+# =============================================================================
+# Command: monitor
+# =============================================================================
+
+def cmd_monitor(argv: list[str]) -> None:
+    """Show cycle statistics."""
+    import json as _json
+    from collections import defaultdict
+
+    parser = argparse.ArgumentParser(prog="opensepia monitor", description="Cycle statistics")
+    parser.add_argument("days", nargs="?", type=int, default=7, help="Days to look back (default: 7)")
+    parser.add_argument("--last", action="store_true", help="Show only last cycle")
+    args = parser.parse_args(argv)
+
+    tool_dir = Path(__file__).parent.parent
+    try:
+        config = OrchestratorConfig.load()
+        logs_dir = config.logs_dir
+    except ConfigError:
+        logs_dir = tool_dir / "project" / "logs" / "runs"
+
+    if args.last:
+        latest = logs_dir / "latest.json"
+        if not latest.exists():
+            print("No logs yet.")
+            return
+        with open(latest) as f:
+            data = _json.load(f)
+        print(f"\n  Last cycle: {data.get('timestamp', '?')}")
+        for a in data.get("agents", []):
+            ctx = a.get("context_chars", 0)
+            resp = a.get("response_chars", 0)
+            err = f" [ERROR: {a['error']}]" if a.get("error") else ""
+            print(f"    {a['agent']}: {ctx} ctx / {resp} resp{err}")
+        print()
+        return
+
+    # Summary
+    from datetime import timedelta as _td
+    cutoff = datetime.now() - _td(days=args.days)
+    logs = []
+    if logs_dir.exists():
+        for f in sorted(logs_dir.glob("*.json")):
+            if f.name == "latest.json":
+                continue
+            try:
+                ts = datetime.strptime(f.stem, "%Y%m%d_%H%M%S")
+                if ts >= cutoff:
+                    with open(f) as fh:
+                        data = _json.load(fh)
+                    data["_ts"] = ts
+                    logs.append(data)
+            except (ValueError, _json.JSONDecodeError):
+                continue
+
+    if not logs:
+        print(f"  No logs for the last {args.days} days.")
+        return
+
+    total_ctx = sum(sum(a.get("context_chars", 0) for a in l.get("agents", [])) for l in logs)
+    total_resp = sum(sum(a.get("response_chars", 0) for a in l.get("agents", [])) for l in logs)
+
+    daily = defaultdict(lambda: {"cycles": 0, "chars": 0})
+    for l in logs:
+        day = l["_ts"].strftime("%Y-%m-%d")
+        daily[day]["cycles"] += 1
+        daily[day]["chars"] += sum(a.get("context_chars", 0) + a.get("response_chars", 0) for a in l.get("agents", []))
+
+    agent_stats = defaultdict(lambda: {"runs": 0, "ctx": 0, "resp": 0})
+    for l in logs:
+        for a in l.get("agents", []):
+            n = a["agent"]
+            agent_stats[n]["runs"] += 1
+            agent_stats[n]["ctx"] += a.get("context_chars", 0)
+            agent_stats[n]["resp"] += a.get("response_chars", 0)
+
+    print(f"\n  Report ({args.days} days)")
+    print(f"  {'─' * 40}")
+    print(f"  Cycles:  {len(logs)}")
+    print(f"  Context: {total_ctx:,} chars")
+    print(f"  Output:  {total_resp:,} chars")
+
+    if daily:
+        print(f"\n  Daily:")
+        for day in sorted(daily):
+            d = daily[day]
+            print(f"    {day}:  {d['cycles']} cycles, {d['chars']:,} chars")
+
+    if agent_stats:
+        print(f"\n  Agents:")
+        for name in sorted(agent_stats):
+            s = agent_stats[name]
+            print(f"    {name:<20} {s['runs']:>3} runs  {s['ctx'] + s['resp']:>10,} chars")
+    print()
+
+
+# =============================================================================
+# Command: reset
+# =============================================================================
+
+def cmd_reset(argv: list[str]) -> None:
+    """Reset project — clears board, workspace, and logs."""
+    import shutil as _shutil
+
+    parser = argparse.ArgumentParser(prog="opensepia reset", description="Reset project")
+    parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
+    args = parser.parse_args(argv)
+
+    tool_dir = Path(__file__).parent.parent
+    project_dir = tool_dir / "project"
+
+    if not args.yes:
+        print("This will delete:")
+        print(f"  - {project_dir / 'board'}/ (sprint, backlog, inbox)")
+        print(f"  - {project_dir / 'workspace' / 'src'}/")
+        print(f"  - {project_dir / 'logs'}/")
+        print()
+        confirm = input("Are you sure? (yes/no): ")
+        if confirm.lower() != "yes":
+            print("Aborted.")
+            return
+
+    # Stop daemon if running
+    try:
+        from opensepia.daemon import stop_daemon, get_daemon_status
+        state = get_daemon_status()
+        if state.is_process_alive():
+            print("Stopping daemon...")
+            stop_daemon()
+    except Exception:
+        pass
+
+    board = project_dir / "board"
+    if board.exists():
+        _shutil.rmtree(board)
+    for d in ["inbox", "archive", ".snapshot"]:
+        (board / d).mkdir(parents=True, exist_ok=True)
+    print("  Board cleared")
+
+    workspace_src = project_dir / "workspace" / "src"
+    if workspace_src.exists():
+        _shutil.rmtree(workspace_src)
+    workspace_src.mkdir(parents=True, exist_ok=True)
+    (workspace_src / ".gitkeep").touch()
+    print("  Workspace cleared")
+
+    logs = project_dir / "logs"
+    if logs.exists():
+        _shutil.rmtree(logs)
+    logs.mkdir(parents=True, exist_ok=True)
+    print("  Logs cleared")
+
+    print()
+    print("Reset complete. Run 'opensepia init <name>' to start a new project.")
+
+
+# =============================================================================
 # Command router
 # =============================================================================
 
 COMMANDS = {
+    "init": cmd_init,
     "run": cmd_run,
     "start": cmd_start,
     "stop": cmd_stop,
@@ -419,6 +695,8 @@ COMMANDS = {
     "pause": cmd_pause,
     "resume": cmd_resume,
     "logs": cmd_logs,
+    "monitor": cmd_monitor,
+    "reset": cmd_reset,
     # Legacy: "daemon" subcommand still works
     "daemon": None,
 }
