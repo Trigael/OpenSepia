@@ -117,6 +117,20 @@ def invoke_agent(
         if verbose:
             log.detail(f"Response: {len(response)} chars")
 
+        # Detect empty/near-empty responses (likely rate-limited or failed silently)
+        if len(response.strip()) <= 1:
+            error_msg = f"Empty response ({len(response.strip())} bytes) — likely rate-limited"
+            logger.warning("Agent %s: %s", agent_id, error_msg)
+            return AgentResult(
+                agent_id=agent_id,
+                agent_name=agent_name or agent_id,
+                response=f"ERROR: {error_msg}",
+                timestamp=datetime.now().isoformat(),
+                context_size=len(context),
+                response_size=len(response),
+                error=error_msg,
+            )
+
         return AgentResult(
             agent_id=agent_id,
             agent_name=agent_name or agent_id,

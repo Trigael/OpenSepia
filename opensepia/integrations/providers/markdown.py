@@ -99,7 +99,7 @@ class MarkdownProvider(BoardProvider):
     # ----- Issues -----
 
     def create_issue(self, title: str, description: str,
-                     labels: list = None, **kwargs) -> dict:
+                     labels: list[str] | None = None, **kwargs) -> dict:
         """Append a story/bug to backlog.md."""
         # Extract story ID from title if present: [STORY-001] Title
         match = re.search(r'\[((?:STORY|BUG)-\d+)\]', title)
@@ -249,7 +249,7 @@ class MarkdownProvider(BoardProvider):
         # is handled via inbox files directly
         return {"status": "ok", "body": body}
 
-    def find_issue_by_id(self, story_id: str) -> Optional[str]:
+    def find_issue_by_id(self, story_id: str) -> str | None:
         if story_id in self._issue_cache:
             return self._issue_cache[story_id]
 
@@ -262,7 +262,7 @@ class MarkdownProvider(BoardProvider):
 
         return None
 
-    def list_issues(self, labels: str = None,
+    def list_issues(self, labels: str | None = None,
                     state: str = "opened") -> list:
         """Parse backlog.md and sprint.md into issue list."""
         from opensepia.board.sync import parse_backlog, parse_sprint_statuses

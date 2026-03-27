@@ -99,7 +99,7 @@ GITHUB_LABEL_COLORS = {
 def ensure_labels(config: GitHubConfig) -> None:
     """Create all required labels if they do not exist."""
     # Load existing labels (paginated)
-    existing_names = set()
+    existing_names: set[str] = set()
     page = 1
     while True:
         result = _api_call(config, "GET", "/labels",
@@ -168,7 +168,7 @@ class GitHubProvider(BoardProvider):
                      labels: list[str] | None = None, **kwargs: Any) -> dict[str, Any]:
         data = {"title": title, "body": description}
         if labels:
-            data["labels"] = labels  # GitHub accepts a list directly
+            data["labels"] = labels  # type: ignore[assignment]  # GitHub accepts a list directly
 
         result = _api_call(self.config, "POST", "/issues", data=data)
         if "error" not in result:

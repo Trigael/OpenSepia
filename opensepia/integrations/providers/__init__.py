@@ -22,6 +22,8 @@ def detect_provider() -> Optional[BoardProvider]:
     2. GitLab — if GITLAB_URL + GITLAB_TOKEN are set
     3. GitHub — if GITHUB_TOKEN + GITHUB_REPO are set
     """
+    provider: Optional[BoardProvider] = None
+
     # Board Server (self-hosted)
     if os.getenv("BOARD_SERVER_URL"):
         from .boardserver import BoardServerProvider

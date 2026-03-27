@@ -91,7 +91,7 @@ class BoardServerProvider(BoardProvider):
     # ----- Issues -----
 
     def create_issue(self, title: str, description: str,
-                     labels: list = None, **kwargs) -> dict:
+                     labels: list[str] | None = None, **kwargs) -> dict:
         # Determine type from labels
         is_bug = labels and "type::bug" in labels
         item_type = "bug" if is_bug else "story"
@@ -168,7 +168,7 @@ class BoardServerProvider(BoardProvider):
         return _api_call(self.config, "POST", f"/items/{issue_id}/comments",
                          data={"body": body}, agent_id=agent_id)
 
-    def find_issue_by_id(self, story_id: str) -> Optional[str]:
+    def find_issue_by_id(self, story_id: str) -> str | None:
         # Check cache
         if story_id in self._issue_cache:
             return self._issue_cache[story_id]
@@ -191,7 +191,7 @@ class BoardServerProvider(BoardProvider):
 
         return None
 
-    def list_issues(self, labels: str = None,
+    def list_issues(self, labels: str | None = None,
                     state: str = "opened") -> list:
         params = {}
         if labels:

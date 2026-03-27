@@ -34,8 +34,8 @@ def _file_lock(lock_path: Path) -> Generator[None, None, None]:
     try:
         lock_file = open(lock_path, "w", encoding="utf-8")
         if _IS_WINDOWS:
-            import msvcrt
-            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)
+            import msvcrt  # type: ignore[import-not-found]
+            msvcrt.locking(lock_file.fileno(), msvcrt.LK_LOCK, 1)  # type: ignore[attr-defined]
         else:
             import fcntl
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
@@ -47,8 +47,8 @@ def _file_lock(lock_path: Path) -> Generator[None, None, None]:
         if lock_file is not None:
             try:
                 if _IS_WINDOWS:
-                    import msvcrt
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
+                    import msvcrt  # type: ignore[import-not-found]
+                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
                 else:
                     import fcntl
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)

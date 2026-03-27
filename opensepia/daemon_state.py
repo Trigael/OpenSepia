@@ -66,11 +66,24 @@ class DaemonState:
             return cls()
 
     def is_process_alive(self) -> bool:
-        """Check if the stored PID corresponds to a running process (cross-platform)."""
+        """Check if the stored PID corresponds to a running Python process.
+
+        Uses /proc/{pid}/cmdline on Linux to verify the PID isn't a recycled
+        non-Python process (e.g., a system daemon that reused the PID).
+        Falls back to a plain kill-0 check on platforms without procfs.
+        """
         if self.pid <= 0:
             return False
         from opensepia.lockfile import _is_pid_alive
-        return _is_pid_alive(self.pid)
+        if not _is_pid_alive(self.pid):
+            return False
+        # Verify it's a Python process (not a recycled system PID)
+        try:
+            cmdline = Path(f"/proc/{self.pid}/cmdline").read_bytes()
+            return b"python" in cmdline
+        except (OSError, ValueError):
+            # No procfs (macOS/Windows) — fall back to PID-only check
+            return True
 
     def mark_stopped(self, state_path: Path) -> None:
         """Mark daemon as stopped and clear transient fields."""

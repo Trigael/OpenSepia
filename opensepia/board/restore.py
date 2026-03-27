@@ -130,7 +130,7 @@ def restore_from_provider(board_dir: Path) -> bool:
     # Reconstruct backlog.md
     backlog_path = board_dir / "backlog.md"
     if not backlog_path.exists() or backlog_path.stat().st_size == 0:
-        sections = {"critical": [], "high": [], "medium": [], "low": []}
+        sections: dict[str, list] = {"critical": [], "high": [], "medium": [], "low": []}
         for s in stories:
             sections[s["priority"]].append(s)
 

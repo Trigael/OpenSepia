@@ -12,7 +12,7 @@ from opensepia import log
 from opensepia.config import OrchestratorConfig, CLI_CHECK_TIMEOUT
 from opensepia.errors import OrchestratorError, ConfigError, LockError
 from opensepia.lockfile import ProcessLock
-from opensepia.pipeline import Pipeline, PipelineContext
+from opensepia.pipeline import Pipeline, PipelineContext, Step
 from opensepia.steps.board_health import BoardHealthStep, SnapshotStep
 from opensepia.steps.sprint_check import SprintCheckStep, SprintSyncStep
 from opensepia.steps.agent_step import AgentStep, AgentCommitStep, AgentSyncStep, InitStandupStep
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # Registry of non-parameterized pipeline steps
-STEP_REGISTRY = {
+STEP_REGISTRY: dict[str, type] = {
     "board_health": BoardHealthStep,
     "sprint_check": SprintCheckStep,
     "snapshot": SnapshotStep,
@@ -43,7 +43,7 @@ STEP_REGISTRY = {
 }
 
 # Registry of parameterized steps (take agent_id as argument)
-PARAMETERIZED_REGISTRY = {
+PARAMETERIZED_REGISTRY: dict[str, type] = {
     "run_agent": AgentStep,
     "commit": AgentCommitStep,
     "sync": AgentSyncStep,
@@ -73,7 +73,7 @@ def build_pipeline(agents_config: dict | None = None, agent_ids: list[str] | Non
     if agent_ids is None:
         agent_ids = []
 
-    steps = []
+    steps: list[Step] = []
     for entry in step_names:
         if not isinstance(entry, str):
             # Future: handle dict entries like agent_group
@@ -253,21 +253,21 @@ def cmd_run(argv: list[str]) -> None:
 
         from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
         state_path = config.project_dir / CYCLE_STATE_FILE
-        resume_state = CycleState.load(state_path)
+        loaded_state = CycleState.load(state_path)
+        resume_state: CycleState | None = None
 
-        if resume_state.is_interrupted:
+        if loaded_state.is_interrupted:
+            resume_state = loaded_state
             log.warn(f"Resuming interrupted cycle {resume_state.cycle_id}")
             log.detail(f"Completed: {', '.join(resume_state.completed_steps)}")
-        else:
-            resume_state = None
 
         pipeline = build_pipeline(config.agents, agent_ids=agent_ids)
         ctx = pipeline.run(ctx, resume_state=resume_state)
 
         if ctx.errors:
             log.banner([f"Completed with {len(ctx.errors)} warning(s)"])
-            for e in ctx.errors:
-                log.detail(f"  - {e}")
+            for err in ctx.errors:
+                log.detail(f"  - {err}")
         else:
             log.banner(["Completed successfully"])
 

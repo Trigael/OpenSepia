@@ -234,13 +234,13 @@ def cmd_monitor(argv: list[str]) -> None:
     total_ctx = sum(sum(a.get("context_chars", 0) for a in l.get("agents", [])) for l in logs)
     total_resp = sum(sum(a.get("response_chars", 0) for a in l.get("agents", [])) for l in logs)
 
-    daily = defaultdict(lambda: {"cycles": 0, "chars": 0})
+    daily: dict[str, dict] = defaultdict(lambda: {"cycles": 0, "chars": 0})
     for l in logs:
         day = l["_ts"].strftime("%Y-%m-%d")
         daily[day]["cycles"] += 1
         daily[day]["chars"] += sum(a.get("context_chars", 0) + a.get("response_chars", 0) for a in l.get("agents", []))
 
-    agent_stats = defaultdict(lambda: {"runs": 0, "ctx": 0, "resp": 0})
+    agent_stats: dict[str, dict] = defaultdict(lambda: {"runs": 0, "ctx": 0, "resp": 0})
     for l in logs:
         for a in l.get("agents", []):
             n = a["agent"]

@@ -147,9 +147,10 @@ def _config_set(argv: list[str]) -> None:
 
     file_type, path = _SETTABLE[key]
 
+    parsed_value: str | int = value
     if key in _INT_KEYS:
         try:
-            value = int(value)
+            parsed_value = int(value)
         except ValueError:
             log.error(f"'{key}' must be an integer, got: {value}")
             return
@@ -176,7 +177,7 @@ def _config_set(argv: list[str]) -> None:
         content = file_path.read_text(encoding="utf-8")
         # Match "  key: value" — only lines not starting with #
         pattern = rf"^((?!.*#.*{re.escape(leaf_key)})[ ]*{re.escape(leaf_key)}:\s*)(\S.*)$"
-        replacement = rf"\g<1>{value}"
+        replacement = rf"\g<1>{parsed_value}"
         new_content, count = re.subn(pattern, replacement, content, count=1, flags=re.MULTILINE)
         if count == 0:
             log.error(f"Could not find '{leaf_key}' in agents.yaml")
@@ -184,11 +185,11 @@ def _config_set(argv: list[str]) -> None:
         file_path.write_text(new_content, encoding="utf-8")
     else:
         # For project.yaml: safe to use yaml.dump (no multi-line strings)
-        node[path[-1]] = value
+        node[path[-1]] = parsed_value
         with open(file_path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
 
-    log.success(f"{key}: {old_value} -> {value}")
+    log.success(f"{key}: {old_value} -> {parsed_value}")
 
 
 # =============================================================================

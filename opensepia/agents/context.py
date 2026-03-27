@@ -6,16 +6,48 @@ workspace tree, inbox, provider comments, and communication rules.
 """
 
 import logging
+import re
 from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Max characters for sprint and backlog sections to prevent blowing token limits.
+# DONE stories are stripped first; if still over limit, text is truncated.
+MAX_SPRINT_CHARS = 3000
+MAX_BACKLOG_CHARS = 3000
+
+
+def _strip_done_stories(text: str) -> str:
+    """Remove DONE section content from sprint text to save context space."""
+    lines = text.split("\n")
+    result = []
+    in_done = False
+    for line in lines:
+        stripped = line.strip().lower()
+        if stripped.startswith("## "):
+            in_done = "done" in stripped
+            result.append(line)
+            if in_done:
+                result.append("(completed stories omitted)")
+            continue
+        if not in_done:
+            result.append(line)
+    return "\n".join(result)
+
+
+def _cap_text(text: str, max_chars: int, label: str) -> str:
+    """Truncate text to max_chars, logging a warning if capped."""
+    if len(text) <= max_chars:
+        return text
+    logger.info("Capping %s from %d to %d chars", label, len(text), max_chars)
+    return text[:max_chars] + f"\n... ({label} truncated at {max_chars} chars)"
+
 
 def build_agent_context_from_adapter(
     agent_id: str,
     agents_config: dict[str, Any],
-    agent_context: "AgentContext",
+    agent_context: Any,
 ) -> str:
     """Build the prompt string from a pre-loaded AgentContext.
 
@@ -32,6 +64,11 @@ def build_agent_context_from_adapter(
 
     ac = agent_context
 
+    # Cap sprint and backlog to prevent blowing agent token limits
+    sprint_md = _strip_done_stories(ac.sprint_md) if ac.sprint_md else ""
+    sprint_md = _cap_text(sprint_md, MAX_SPRINT_CHARS, "sprint_md")
+    backlog_md = _cap_text(ac.backlog_md, MAX_BACKLOG_CHARS, "backlog_md") if ac.backlog_md else ""
+
     context = f"""{system_prompt}
 
 ---
@@ -42,11 +79,11 @@ Time: {now} | Sprint: {ac.sprint_num} | Cycle: {ac.cycle_num}
 ## Project
 {ac.project_description if ac.project_description else "(empty)"}
 
-## Sprint (COMPLETE)
-{ac.sprint_md if ac.sprint_md else "(none)"}
+## Sprint (active stories)
+{sprint_md if sprint_md else "(none)"}
 
 ## Backlog (truncated)
-{ac.backlog_md if ac.backlog_md else "(empty)"}
+{backlog_md if backlog_md else "(empty)"}
 
 ## Standup (current cycle)
 {ac.standup if ac.standup.strip() else "(empty so far)"}

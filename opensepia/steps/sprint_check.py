@@ -58,6 +58,8 @@ class SprintCheckStep:
         from opensepia.agents.parser import parse_files_section
         from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
 
+        if ctx.board_adapter is None:
+            return
         adapter = ctx.board_adapter
         standup_file = ctx.board_dir / "standup.md"
 
@@ -91,7 +93,7 @@ class SprintCheckStep:
                         "context_size": result.context_size,
                         "response_size": result.response_size,
                     }
-                    parsed = parse_files_section(result_dict["response"])
+                    parsed = parse_files_section(result.response)
                     adapter.apply_agent_output(agent_id, parsed, ctx.agents_config)
                     _handle_standup_fallback(agent_id, result_dict, parsed, ctx.agents_config, standup_file)
                     _handle_provider_comments(agent_id, parsed)

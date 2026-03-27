@@ -413,7 +413,7 @@ class DockerClient:
         Full deploy: build (optional) -> stop old -> run new.
         Main method for the DevOps agent.
         """
-        result = {
+        result: dict[str, Any] = {
             "built": False,
             "stopped_old": False,
             "started_new": False,

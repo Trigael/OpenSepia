@@ -363,9 +363,8 @@ class OrchestratorDaemon:
             # Check for interrupted cycle
             from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
             cs_path = config.project_dir / CYCLE_STATE_FILE
-            resume_state = CycleState.load(cs_path)
-            if not resume_state.is_interrupted:
-                resume_state = None
+            loaded_state = CycleState.load(cs_path)
+            resume_state: CycleState | None = loaded_state if loaded_state.is_interrupted else None
 
             pipeline = build_pipeline(config.agents, agent_ids=agent_ids)
             ctx = pipeline.run(ctx, resume_state=resume_state)

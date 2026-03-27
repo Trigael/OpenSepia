@@ -25,6 +25,7 @@ from opensepia.agents.invoker import invoke_agent
 from opensepia.agents.parser import parse_files_section
 from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
 from opensepia.config import OrchestratorConfig
+from opensepia.errors import AgentError
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class InitStandupStep:
     critical = False
 
     def execute(self, ctx: PipelineContext) -> PipelineContext:
-        if ctx.skip_agents or ctx.dry_run:
+        if ctx.skip_agents or ctx.dry_run or ctx.board_adapter is None:
             return ctx
         ctx.board_adapter.init_standup(ctx.sprint_num, ctx.cycle_num)
         return ctx
@@ -56,7 +57,7 @@ class AgentStep:
     critical = False
 
     def execute(self, ctx: PipelineContext) -> PipelineContext:
-        if ctx.skip_agents:
+        if ctx.skip_agents or ctx.board_adapter is None:
             return ctx
 
         adapter = ctx.board_adapter
@@ -66,7 +67,7 @@ class AgentStep:
         if not agent_cfg:
             error_msg = f"Agent '{agent_id}' not found in agents config — skipped"
             log.warn(error_msg)
-            ctx.errors.append(error_msg)
+            ctx.errors.append(AgentError(agent_id, error_msg, retryable=False))
             return ctx
 
         agent_name = agent_cfg["name"]
@@ -120,7 +121,9 @@ class AgentStep:
 
                 if agent_result.error or "ERROR" in agent_result.response:
                     error_msg = agent_result.error or agent_result.response[:100]
-                    if attempt < max_retries:
+                    # Don't retry non-retryable errors (missing CLI, parse errors)
+                    is_retryable = "not installed" not in error_msg and "output parse error" not in error_msg
+                    if is_retryable and attempt < max_retries:
                         log.agent_retry(retry_delay)
                         time.sleep(retry_delay)
                         continue
@@ -325,7 +328,7 @@ class AgentSyncStep:
     critical = False
 
     def execute(self, ctx: PipelineContext) -> PipelineContext:
-        if ctx.dry_run or ctx.skip_agents:
+        if ctx.dry_run or ctx.skip_agents or ctx.board_adapter is None:
             return ctx
 
         adapter = ctx.board_adapter
@@ -350,6 +353,8 @@ class AgentSyncStep:
         branches = [b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()]
 
         # Check which stories are DONE (from board adapter)
+        if ctx.board_adapter is None:
+            return
         try:
             summary = ctx.board_adapter.get_board_summary()
         except (OSError, ValueError, KeyError):
@@ -363,7 +368,7 @@ class AgentSyncStep:
             logger.debug("Could not fetch sprint text for branch cleanup", exc_info=True)
             return
 
-        done_ids = set()
+        done_ids: set[str] = set()
         in_done_section = False
         for line in sprint_text.split("\n"):
             stripped = line.strip().lower()

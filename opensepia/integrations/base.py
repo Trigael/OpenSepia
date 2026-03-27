@@ -112,7 +112,7 @@ class BoardProvider(ABC):
         ...
 
     @abstractmethod
-    def find_issue_by_id(self, story_id: str) -> int | None:
+    def find_issue_by_id(self, story_id: str) -> str | int | None:
         ...
 
     @abstractmethod
