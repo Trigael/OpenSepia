@@ -24,11 +24,15 @@ class StandupSyncStep:
         if ctx.dry_run:
             return ctx
 
-        # Skip if using BoardServerAdapter
+        # Skip if using BoardServerAdapter or PlaneBoardAdapter — they handle sync internally
         if ctx.board_adapter:
             from opensepia.board_adapter_server import BoardServerAdapter
             if isinstance(ctx.board_adapter, BoardServerAdapter):
                 log.step_detail("standup_sync", "Skipping (board server adapter handles sync)")
+                return ctx
+            from opensepia.board_adapter_plane import PlaneBoardAdapter
+            if isinstance(ctx.board_adapter, PlaneBoardAdapter):
+                log.step_detail("standup_sync", "Skipping (Plane adapter handles sync)")
                 return ctx
 
         log.step("standup_sync", "Standup -> provider sync...")

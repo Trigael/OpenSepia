@@ -32,6 +32,14 @@ def detect_provider() -> Optional[BoardProvider]:
             logger.debug("Board provider: Board Server (%s)", os.getenv("BOARD_SERVER_URL"))
             return provider
 
+    # Plane.so
+    if os.getenv("PLANE_API_KEY") and os.getenv("PLANE_WORKSPACE_SLUG"):
+        from .plane import PlaneProvider
+        provider = PlaneProvider()
+        if provider.enabled:
+            logger.debug("Board provider: Plane.so")
+            return provider
+
     # GitLab
     if os.getenv("GITLAB_URL") and os.getenv("GITLAB_TOKEN"):
         from .gitlab import GitLabProvider

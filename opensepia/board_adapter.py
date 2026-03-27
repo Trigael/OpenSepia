@@ -121,15 +121,26 @@ def create_board_adapter(
     workspace_dir: Path,
     project_dir: Path,
 ) -> BoardAdapter:
-    """Auto-select adapter based on BOARD_SERVER_URL env var.
+    """Auto-select adapter based on environment variables.
 
-    Returns BoardServerAdapter if BOARD_SERVER_URL is set and non-empty,
-    otherwise returns MarkdownBoardAdapter.
+    Priority:
+    1. Board Server — if BOARD_SERVER_URL is set (explicit override)
+    2. Plane.so — if PLANE_API_KEY + PLANE_WORKSPACE_SLUG are set
+    3. Markdown — default fallback (local files)
     """
+    # 1. Board Server (explicit override)
     server_url = os.environ.get("BOARD_SERVER_URL", "").strip()
     if server_url:
         from opensepia.board_adapter_server import BoardServerAdapter
         return BoardServerAdapter(server_url, workspace_dir, project_dir)
-    else:
-        from opensepia.board_adapter_markdown import MarkdownBoardAdapter
-        return MarkdownBoardAdapter(board_dir, workspace_dir, project_dir)
+
+    # 2. Plane.so
+    plane_key = os.environ.get("PLANE_API_KEY", "").strip()
+    plane_ws = os.environ.get("PLANE_WORKSPACE_SLUG", "").strip()
+    if plane_key and plane_ws:
+        from opensepia.board_adapter_plane import PlaneBoardAdapter
+        return PlaneBoardAdapter(workspace_dir, project_dir)
+
+    # 3. Markdown (default)
+    from opensepia.board_adapter_markdown import MarkdownBoardAdapter
+    return MarkdownBoardAdapter(board_dir, workspace_dir, project_dir)

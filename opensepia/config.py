@@ -26,6 +26,7 @@ DOCKER_LOGIN_TIMEOUT = 30        # docker registry login
 HTTP_REQUEST_TIMEOUT = 10        # Board server HTTP requests
 PROVIDER_API_TIMEOUT = 30        # GitLab / GitHub API calls
 PROVIDER_MR_TIMEOUT = 15         # Merge-request / PR API calls
+PLANE_API_TIMEOUT = 30           # Plane.so API calls
 CLI_CHECK_TIMEOUT = 5            # Quick CLI availability checks
 
 # Default execution parameters (used when YAML doesn't specify)
