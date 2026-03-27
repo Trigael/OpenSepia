@@ -17,6 +17,8 @@ def cmd_start(argv: list[str]) -> None:
     parser = argparse.ArgumentParser(prog="opensepia start", description="Start background daemon")
     parser.add_argument("--mode", "-m", default="dev-team", help="Execution mode (default: dev-team)")
     parser.add_argument("--pause", "-p", type=int, default=60, help="Seconds between cycles (default: 60)")
+    parser.add_argument("--cycles", "-c", type=int, default=0, help="Stop after N cycles (default: unlimited)")
+    parser.add_argument("--sprints", "-s", type=int, default=0, help="Stop after N sprints (default: unlimited)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose daemon logging")
     args = parser.parse_args(argv)
 
@@ -47,10 +49,18 @@ def cmd_start(argv: list[str]) -> None:
     if not git_info["initialized"]:
         git_note = " (git sync disabled — no git repo in workspace)"
 
-    log.info(f"Starting daemon (mode: {mode}, pause: {args.pause}s{git_note})...")
+    limits = ""
+    if args.cycles:
+        limits += f", {args.cycles} cycles"
+    if args.sprints:
+        limits += f", {args.sprints} sprints"
+    log.info(f"Starting daemon (mode: {mode}, pause: {args.pause}s{limits}{git_note})...")
 
     try:
-        daemon = OrchestratorDaemon(mode=mode, pause=args.pause, verbose=args.verbose)
+        daemon = OrchestratorDaemon(
+            mode=mode, pause=args.pause, verbose=args.verbose,
+            max_cycles=args.cycles, max_sprints=args.sprints,
+        )
         pid = daemon.start()
         log.success(f"Daemon started (PID: {pid})")
         log.info("")

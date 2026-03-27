@@ -46,7 +46,11 @@ Getting started:
   init <name> [desc]    Initialize a new project
 
 Daemon:
-  start [--mode MODE]   Start the daemon (runs cycles in background)
+  start [options]       Start the daemon (runs cycles in background)
+    --mode MODE         Execution mode (default: dev-team)
+    --pause SECS        Seconds between cycles (default: 60)
+    --cycles N          Stop after N cycles (default: unlimited)
+    --sprints N         Stop after N sprints (default: unlimited)
   stop                  Stop the running daemon
   status                Show current status
   pause / resume        Pause or resume the daemon

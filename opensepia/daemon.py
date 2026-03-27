@@ -47,10 +47,14 @@ class OrchestratorDaemon:
         pause: int = 60,
         verbose: bool = False,
         tool_dir: Path | None = None,
+        max_cycles: int = 0,
+        max_sprints: int = 0,
     ):
         self.mode = mode
         self.pause = pause
         self.verbose = verbose
+        self.max_cycles = max_cycles    # 0 = unlimited
+        self.max_sprints = max_sprints  # 0 = unlimited
         self.tool_dir = tool_dir or Path(__file__).parent.parent
         self.state_path = self.tool_dir / DAEMON_STATE_FILE
         self.log_path = self.tool_dir / "logs" / "daemon.log"
@@ -125,6 +129,8 @@ class OrchestratorDaemon:
             sys.executable, "-m", "opensepia._daemon_worker",
             "--mode", self.mode,
             "--pause", str(self.pause),
+            "--cycles", str(self.max_cycles),
+            "--sprints", str(self.max_sprints),
             "--tool-dir", str(self.tool_dir),
         ]
         if self.verbose:
@@ -217,8 +223,15 @@ class OrchestratorDaemon:
             pause_seconds=self.pause,
         )
         self._state.save(self.state_path)
-        logger.info("Daemon started (PID: %d, mode: %s, pause: %ds)",
-                     os.getpid(), self.mode, self.pause)
+        limits = ""
+        if self.max_cycles:
+            limits += f", max {self.max_cycles} cycles"
+        if self.max_sprints:
+            limits += f", max {self.max_sprints} sprints"
+        logger.info("Daemon started (PID: %d, mode: %s, pause: %ds%s)",
+                     os.getpid(), self.mode, self.pause, limits)
+
+        starting_sprint = None
 
         try:
             while not self._stopping:
@@ -241,6 +254,26 @@ class OrchestratorDaemon:
                 self._state.last_cycle_errors = errors
                 self._state.current_step = None
                 self._state.current_cycle_started_at = None
+
+                # Check cycle limit
+                if self.max_cycles and self._state.cycle_count >= self.max_cycles:
+                    logger.info("Reached max cycles (%d). Stopping.", self.max_cycles)
+                    break
+
+                # Check sprint limit
+                if self.max_sprints:
+                    try:
+                        from opensepia.config import OrchestratorConfig
+                        config = OrchestratorConfig.load(self.tool_dir)
+                        current_sprint = config.sprint_num
+                        if starting_sprint is None:
+                            starting_sprint = current_sprint
+                        sprints_done = current_sprint - starting_sprint
+                        if sprints_done >= self.max_sprints:
+                            logger.info("Reached max sprints (%d). Stopping.", self.max_sprints)
+                            break
+                    except Exception:
+                        pass
 
                 if not self._stopping:
                     next_time = datetime.now() + timedelta(seconds=self.pause)

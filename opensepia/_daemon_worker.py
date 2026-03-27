@@ -15,6 +15,8 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", default="dev-team")
     parser.add_argument("--pause", type=int, default=60)
+    parser.add_argument("--cycles", type=int, default=0)
+    parser.add_argument("--sprints", type=int, default=0)
     parser.add_argument("--tool-dir", required=True)
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
@@ -29,6 +31,8 @@ def main() -> None:
         pause=args.pause,
         verbose=args.verbose,
         tool_dir=tool_dir,
+        max_cycles=args.cycles,
+        max_sprints=args.sprints,
     )
     daemon._setup_logging()
     daemon.run_loop()
