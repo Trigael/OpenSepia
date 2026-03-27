@@ -66,6 +66,55 @@ class PlaneProvider(BoardProvider):
         self._ensure_states()
         self._ensure_labels()
 
+    # ----- Workspace & Project Creation -----
+
+    def list_workspaces(self) -> list[dict]:
+        """List all workspaces the API key has access to."""
+        result = self._client.api("GET", "/workspaces/", global_scope=True)
+        if isinstance(result, dict) and "results" in result:
+            return result["results"]
+        return result if isinstance(result, list) else []
+
+    def create_workspace(self, name: str, slug: str) -> dict:
+        """Create a new workspace. Returns workspace dict or error."""
+        result = self._client.api("POST", "/workspaces/", data={
+            "name": name,
+            "slug": slug,
+        }, global_scope=True)
+        return result if isinstance(result, dict) else {}
+
+    def find_workspace(self, slug: str) -> Optional[dict]:
+        """Find a workspace by slug."""
+        workspaces = self.list_workspaces()
+        for ws in workspaces:
+            if ws.get("slug", "").lower() == slug.lower():
+                return ws
+        return None
+
+    def list_projects(self) -> list[dict]:
+        """List all projects in the workspace."""
+        result = self._client.api("GET", "/projects/", workspace_scope=True)
+        if isinstance(result, dict) and "results" in result:
+            return result["results"]
+        return result if isinstance(result, list) else []
+
+    def create_project(self, name: str, description: str = "") -> dict:
+        """Create a new project in the workspace. Returns project dict or error."""
+        result = self._client.api("POST", "/projects/", data={
+            "name": name,
+            "description": description,
+            "network": 2,  # 0=secret, 2=public within workspace
+        }, workspace_scope=True)
+        return result if isinstance(result, dict) else {}
+
+    def find_project(self, name: str) -> Optional[dict]:
+        """Find a project by name within the workspace."""
+        projects = self.list_projects()
+        for proj in projects:
+            if proj.get("name", "").lower() == name.lower():
+                return proj
+        return None
+
     def _ensure_states(self) -> None:
         """Create required workflow states if they don't exist."""
         existing = self._get_states()

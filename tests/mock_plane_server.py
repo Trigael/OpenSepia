@@ -28,6 +28,12 @@ class PlaneStore:
         self.pages: list[dict] = []
         self.comments: dict[str, list[dict]] = {}  # work_item_id -> comments
         self.cycle_issues: dict[str, list[str]] = {}  # cycle_id -> [work_item_ids]
+        self.workspaces: list[dict] = [
+            {"id": _uuid(), "name": "Test Workspace", "slug": "test-ws"},
+        ]
+        self.projects: list[dict] = [
+            {"id": "test-proj", "name": "Test Project", "description": "A test project"},
+        ]
         self.seed()
 
     def seed(self) -> None:
@@ -175,7 +181,34 @@ class MockPlaneHandler(BaseHTTPRequestHandler):
                 break
         return resource, resource_id
 
+    def _is_global_endpoint(self) -> tuple[bool, str, str]:
+        """Check if this is a global/workspace-scoped endpoint.
+
+        Global: /api/v1/workspaces/ (list/create workspaces)
+        Workspace: /api/v1/workspaces/{slug}/projects/ (list/create projects)
+        Returns (is_global, resource, rid).
+        """
+        path = self.path.split("?")[0].rstrip("/")
+        parts = [p for p in path.split("/") if p]
+        # /api/v1/workspaces → global workspaces endpoint
+        if parts == ["api", "v1", "workspaces"]:
+            return True, "workspaces", ""
+        # /api/v1/workspaces/{slug}/projects → workspace projects endpoint
+        if len(parts) == 5 and parts[:2] == ["api", "v1"] and parts[2] == "workspaces" and parts[4] == "projects":
+            return True, "projects", ""
+        return False, "", ""
+
     def do_GET(self) -> None:
+        is_global, g_resource, g_rid = self._is_global_endpoint()
+        if is_global:
+            if g_resource == "workspaces":
+                self._send_json({"results": self.store.workspaces})
+            elif g_resource == "projects":
+                self._send_json({"results": self.store.projects})
+            else:
+                self._send_json({"error": "unknown"}, 404)
+            return
+
         resource, rid = self._parse_path()
 
         if resource == "states":
@@ -225,8 +258,23 @@ class MockPlaneHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "unknown endpoint", "path": self.path}, 404)
 
     def do_POST(self) -> None:
-        resource, rid = self._parse_path()
+        is_global, g_resource, _ = self._is_global_endpoint()
         body = self._read_body()
+
+        if is_global:
+            if g_resource == "workspaces":
+                ws = {"id": _uuid(), "slug": body.get("slug", "new-ws"), **body}
+                self.store.workspaces.append(ws)
+                self._send_json(ws, 201)
+            elif g_resource == "projects":
+                proj = {"id": _uuid(), **body}
+                self.store.projects.append(proj)
+                self._send_json(proj, 201)
+            else:
+                self._send_json({"error": "unknown"}, 404)
+            return
+
+        resource, rid = self._parse_path()
 
         if resource == "states":
             state = {"id": _uuid(), **body}

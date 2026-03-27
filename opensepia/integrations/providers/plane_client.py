@@ -60,6 +60,11 @@ class PlaneConfig:
         """Base URL for workspace-scoped API calls."""
         return f"{self.base_url}/api/v1/workspaces/{self.workspace_slug}"
 
+    @property
+    def global_base(self) -> str:
+        """Base URL for global API calls (e.g., workspace creation)."""
+        return f"{self.base_url}/api/v1"
+
 
 class PlaneCache:
     """In-memory TTL cache for Plane.so API responses.
@@ -151,6 +156,7 @@ class PlaneClient:
         data: Optional[dict] = None,
         params: Optional[dict] = None,
         workspace_scope: bool = False,
+        global_scope: bool = False,
     ) -> Union[dict, list]:
         """Make a Plane.so API request.
 
@@ -160,8 +166,14 @@ class PlaneClient:
             data: JSON body for POST/PATCH
             params: Query parameters
             workspace_scope: If True, use workspace base URL instead of project
+            global_scope: If True, use global base URL (for workspace creation)
         """
-        base = self.config.workspace_base if workspace_scope else self.config.api_base
+        if global_scope:
+            base = self.config.global_base
+        elif workspace_scope:
+            base = self.config.workspace_base
+        else:
+            base = self.config.api_base
         url = f"{base}{endpoint}"
         if params:
             url += "?" + urllib.parse.urlencode(params)

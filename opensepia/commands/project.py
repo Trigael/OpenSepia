@@ -130,6 +130,9 @@ def cmd_init(argv: list[str]) -> None:
             encoding="utf-8",
         )
 
+    # Plane.so integration — auto-create workspace and project
+    _setup_plane(args.name, args.description, tool_dir, agent_ids)
+
     log.success("Project initialized!")
     log.info(f"Board:     {board_dir}")
     log.info(f"Workspace: {workspace_dir}")
@@ -142,6 +145,167 @@ def cmd_init(argv: list[str]) -> None:
     log.info("git init")
     log.info("git remote add origin <your-repo-url>")
     log.info("# Then set GIT_REPO_URL and GIT_TOKEN in config/.env")
+
+
+def _setup_plane(
+    project_name: str,
+    description: str,
+    tool_dir: Path,
+    agent_ids: list[str],
+) -> None:
+    """Auto-create Plane.so workspace, project, and board infrastructure.
+
+    Skips silently if PLANE_API_KEY is not set.
+    Creates workspace and project if they don't exist, stores the project ID
+    in config/.env, then runs ensure_board_ready() for states/labels/pages.
+    """
+    import os
+    import re
+
+    plane_key = os.environ.get("PLANE_API_KEY", "").strip()
+    plane_base = os.environ.get("PLANE_BASE_URL", "http://localhost:3000").strip()
+    if not plane_key:
+        return
+
+    log.info("")
+    log.header("Plane.so integration")
+
+    from opensepia.integrations.providers.plane_client import PlaneClient, PlaneConfig
+    from opensepia.integrations.providers.plane import PlaneProvider
+
+    # Derive a slug from the project name (lowercase, hyphens, no special chars)
+    slug = re.sub(r'[^a-z0-9]+', '-', project_name.lower()).strip('-')[:48]
+    if not slug:
+        slug = "opensepia"
+
+    workspace_slug = os.environ.get("PLANE_WORKSPACE_SLUG", "").strip()
+    project_id = os.environ.get("PLANE_PROJECT_ID", "").strip()
+
+    # Create a temporary config for workspace-level operations
+    config = PlaneConfig(
+        api_key=plane_key,
+        workspace_slug=workspace_slug or slug,
+        project_id=project_id,
+        base_url=plane_base,
+    )
+    provider = PlaneProvider(config)
+
+    # Step 1: Find or create workspace
+    if not workspace_slug:
+        ws = provider.find_workspace(slug)
+        if ws:
+            workspace_slug = ws["slug"]
+            log.info(f"  Found workspace: {workspace_slug}")
+        else:
+            result = provider.create_workspace(project_name, slug)
+            if isinstance(result, dict) and "error" not in result:
+                workspace_slug = result.get("slug", slug)
+                log.success(f"  Created workspace: {workspace_slug}")
+            else:
+                # Workspace creation may require admin — try using the slug directly
+                log.warn(f"  Could not create workspace: {result.get('message', result)}")
+                log.info(f"  Trying slug '{slug}' — create it manually if needed")
+                workspace_slug = slug
+
+        # Update config with the real workspace slug
+        config.workspace_slug = workspace_slug
+        os.environ["PLANE_WORKSPACE_SLUG"] = workspace_slug
+        provider = PlaneProvider(config)
+
+    # Step 2: Find or create project
+    if not project_id:
+        proj = provider.find_project(project_name)
+        if proj:
+            project_id = proj["id"]
+            log.info(f"  Found project: {project_name} ({project_id[:8]}...)")
+        else:
+            result = provider.create_project(project_name, description)
+            if isinstance(result, dict) and "error" not in result and "id" in result:
+                project_id = result["id"]
+                log.success(f"  Created project: {project_name} ({project_id[:8]}...)")
+            else:
+                log.warn(f"  Could not create project: {result.get('message', result)}")
+                log.info("  Set PLANE_PROJECT_ID in config/.env manually")
+                return
+
+        # Update config with the real project ID
+        config.project_id = project_id
+        os.environ["PLANE_PROJECT_ID"] = project_id
+        provider = PlaneProvider(config)
+
+    # Step 3: Save env vars to config/.env
+    env_file = tool_dir / "config" / ".env"
+    _update_env_file(env_file, {
+        "PLANE_API_KEY": plane_key,
+        "PLANE_BASE_URL": plane_base,
+        "PLANE_WORKSPACE_SLUG": workspace_slug,
+        "PLANE_PROJECT_ID": project_id,
+    })
+    log.info(f"  Saved Plane config to {env_file}")
+
+    # Step 4: Set up board infrastructure (states, labels, pages, cycle)
+    from opensepia.board_adapter_plane import PlaneBoardAdapter
+    adapter = PlaneBoardAdapter(
+        tool_dir / "project" / "workspace",
+        tool_dir / "project",
+        config,
+    )
+
+    agents_config = {"agents": {aid: {} for aid in agent_ids}}
+    adapter.ensure_board_ready(agents_config)
+
+    # Create first cycle (Sprint 1)
+    cycle_id = provider.get_or_create_cycle(1)
+    if cycle_id:
+        log.info("  Created Sprint 1 cycle")
+
+    # Seed initial work items in Plane
+    for story_id, title, priority in [
+        ("STORY-001", "Define MVP scope", "high"),
+        ("STORY-002", "Set up development environment", "medium"),
+    ]:
+        existing = provider.find_issue_by_id(story_id)
+        if not existing:
+            result = provider.create_work_item(story_id, title, priority=priority)
+            if isinstance(result, dict) and "id" in result and cycle_id:
+                provider.assign_to_cycle(result["id"], cycle_id)
+
+    # Seed project description page
+    provider.update_page("project-description",
+                         f"# {project_name}\n\n{description}")
+
+    log.success("  Plane.so setup complete!")
+    log.info(f"  Workspace: {workspace_slug}")
+    log.info(f"  Project:   {project_name}")
+    log.info(f"  URL:       {plane_base}")
+
+
+def _update_env_file(env_file: Path, values: dict[str, str]) -> None:
+    """Update or add key=value pairs in a .env file."""
+    existing_lines: list[str] = []
+    if env_file.exists():
+        existing_lines = env_file.read_text(encoding="utf-8").splitlines()
+
+    keys_written: set[str] = set()
+    new_lines: list[str] = []
+
+    for line in existing_lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in values:
+                new_lines.append(f"{key}={values[key]}")
+                keys_written.add(key)
+                continue
+        new_lines.append(line)
+
+    # Append any values not already in the file
+    for key, value in values.items():
+        if key not in keys_written:
+            new_lines.append(f"{key}={value}")
+
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
 
 
 def cmd_reset(argv: list[str]) -> None:

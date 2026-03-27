@@ -626,6 +626,85 @@ class TestAdapterFactory:
 # Provider detection tests
 # ============================================================================
 
+class TestPlaneWorkspaceProject:
+    def test_list_workspaces(self, plane_env):
+        workspaces = plane_env["provider"].list_workspaces()
+        assert len(workspaces) >= 1
+        assert workspaces[0]["slug"] == "test-ws"
+
+    def test_find_workspace(self, plane_env):
+        ws = plane_env["provider"].find_workspace("test-ws")
+        assert ws is not None
+        assert ws["slug"] == "test-ws"
+
+    def test_find_workspace_not_found(self, plane_env):
+        ws = plane_env["provider"].find_workspace("nonexistent")
+        assert ws is None
+
+    def test_create_workspace(self, plane_env):
+        result = plane_env["provider"].create_workspace("New WS", "new-ws")
+        assert "id" in result
+        assert result["slug"] == "new-ws"
+
+    def test_list_projects(self, plane_env):
+        projects = plane_env["provider"].list_projects()
+        assert len(projects) >= 1
+
+    def test_find_project(self, plane_env):
+        proj = plane_env["provider"].find_project("Test Project")
+        assert proj is not None
+
+    def test_find_project_not_found(self, plane_env):
+        proj = plane_env["provider"].find_project("Nonexistent")
+        assert proj is None
+
+    def test_create_project(self, plane_env):
+        result = plane_env["provider"].create_project("New Project", "A new project")
+        assert "id" in result
+
+    def test_setup_plane_with_existing_workspace(self, plane_env, tmp_path):
+        """Test _setup_plane when workspace already exists."""
+        from opensepia.commands.project import _setup_plane
+
+        tool_dir = tmp_path / "tool"
+        (tool_dir / "config").mkdir(parents=True)
+        (tool_dir / "project" / "workspace").mkdir(parents=True)
+        (tool_dir / "project" / "board").mkdir(parents=True)
+
+        with patch.dict(os.environ, {
+            "PLANE_API_KEY": "test",
+            "PLANE_BASE_URL": plane_env["url"],
+            "PLANE_WORKSPACE_SLUG": "test-ws",
+            "PLANE_PROJECT_ID": "",
+        }):
+            _setup_plane("My App", "A cool app", tool_dir, ["po", "dev1"])
+
+        # Should have saved config to .env
+        env_content = (tool_dir / "config" / ".env").read_text()
+        assert "PLANE_WORKSPACE_SLUG=test-ws" in env_content
+        assert "PLANE_PROJECT_ID=" in env_content
+
+    def test_update_env_file(self, tmp_path):
+        from opensepia.commands.project import _update_env_file
+
+        env_file = tmp_path / ".env"
+        env_file.write_text("FOO=bar\nBAZ=qux\n")
+
+        _update_env_file(env_file, {"FOO": "updated", "NEW_KEY": "new_val"})
+        content = env_file.read_text()
+        assert "FOO=updated" in content
+        assert "BAZ=qux" in content
+        assert "NEW_KEY=new_val" in content
+
+    def test_update_env_file_creates_new(self, tmp_path):
+        from opensepia.commands.project import _update_env_file
+
+        env_file = tmp_path / "config" / ".env"
+        _update_env_file(env_file, {"KEY": "val"})
+        assert env_file.exists()
+        assert "KEY=val" in env_file.read_text()
+
+
 class TestProviderDetection:
     def test_plane_provider_detected(self, plane_env):
         # Clear BOARD_SERVER_URL so Plane provider is detected
