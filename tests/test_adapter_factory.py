@@ -24,6 +24,8 @@ def board_dirs(tmp_path):
 class TestAdapterFactory:
     def test_returns_markdown_when_no_env(self, board_dirs, monkeypatch):
         monkeypatch.delenv("BOARD_SERVER_URL", raising=False)
+        monkeypatch.delenv("PLANE_API_KEY", raising=False)
+        monkeypatch.delenv("PLANE_WORKSPACE_SLUG", raising=False)
         board, ws, project = board_dirs
         adapter = create_board_adapter(board, ws, project)
         assert isinstance(adapter, MarkdownBoardAdapter)
@@ -36,12 +38,16 @@ class TestAdapterFactory:
 
     def test_always_returns_board_adapter(self, board_dirs, monkeypatch):
         monkeypatch.delenv("BOARD_SERVER_URL", raising=False)
+        monkeypatch.delenv("PLANE_API_KEY", raising=False)
+        monkeypatch.delenv("PLANE_WORKSPACE_SLUG", raising=False)
         board, ws, project = board_dirs
         adapter = create_board_adapter(board, ws, project)
         assert isinstance(adapter, BoardAdapter)
 
     def test_passes_dirs_to_markdown(self, board_dirs, monkeypatch):
         monkeypatch.delenv("BOARD_SERVER_URL", raising=False)
+        monkeypatch.delenv("PLANE_API_KEY", raising=False)
+        monkeypatch.delenv("PLANE_WORKSPACE_SLUG", raising=False)
         board, ws, project = board_dirs
         adapter = create_board_adapter(board, ws, project)
         assert adapter.board_dir == board
@@ -55,6 +61,8 @@ class TestAdapterFactory:
 
     def test_empty_url_uses_markdown(self, board_dirs, monkeypatch):
         monkeypatch.setenv("BOARD_SERVER_URL", "")
+        monkeypatch.delenv("PLANE_API_KEY", raising=False)
+        monkeypatch.delenv("PLANE_WORKSPACE_SLUG", raising=False)
         board, ws, project = board_dirs
         adapter = create_board_adapter(board, ws, project)
         assert isinstance(adapter, MarkdownBoardAdapter)

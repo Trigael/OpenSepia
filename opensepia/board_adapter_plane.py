@@ -64,6 +64,11 @@ class PlaneBoardAdapter(BoardAdapter):
     def provider(self) -> PlaneProvider:
         return self._provider
 
+    @property
+    def _use_local_files(self) -> bool:
+        """Fall back to local files when Pages API is unavailable."""
+        return not self._provider.pages_available
+
     # =====================================================================
     # Agent context
     # =====================================================================
@@ -177,9 +182,18 @@ class PlaneBoardAdapter(BoardAdapter):
         return text
 
     def _get_project_description(self, project_config: dict) -> str:
-        """Get project description from Plane Page, falling back to config."""
-        content = self._provider.get_page_content("project-description")
-        if content and content.strip():
+        """Get project description from Plane Page or local file, falling back to config."""
+        if not self._use_local_files:
+            content = self._provider.get_page_content("project-description")
+            if content and content.strip():
+                if len(content) > MAX_PROJECT_CHARS:
+                    content = content[:MAX_PROJECT_CHARS] + "\n... (truncated)"
+                return content
+
+        # Try local file
+        local = self.project_dir / "board" / "project.md"
+        if local.exists():
+            content = local.read_text(encoding="utf-8")
             if len(content) > MAX_PROJECT_CHARS:
                 content = content[:MAX_PROJECT_CHARS] + "\n... (truncated)"
             return content
@@ -188,21 +202,29 @@ class PlaneBoardAdapter(BoardAdapter):
         return f"# {proj.get('name', 'Project')}\n\n{proj.get('description', '')}"
 
     def _get_standup_text(self, sprint_num: int, cycle_num: int) -> str:
-        """Get standup from accumulated entries or Plane Page."""
+        """Get standup from accumulated entries, Plane Page, or local file."""
         if self._standup_entries:
             text = "\n".join(self._standup_entries)
-        else:
+        elif not self._use_local_files:
             page_name = f"standup-s{sprint_num}-c{cycle_num}"
             text = self._provider.get_page_content(page_name)
+        else:
+            local = self.project_dir / "board" / "standup.md"
+            text = local.read_text(encoding="utf-8") if local.exists() else ""
 
         if len(text) > MAX_STANDUP_CHARS:
             text = text[:MAX_STANDUP_CHARS] + "\n... (standup truncated)"
         return text
 
     def _get_inbox_text(self, agent_id: str) -> str:
-        """Get agent inbox from Plane Page."""
-        page_name = f"inbox-{agent_id}"
-        text = self._provider.get_page_content(page_name)
+        """Get agent inbox from Plane Page or local file."""
+        if not self._use_local_files:
+            page_name = f"inbox-{agent_id}"
+            text = self._provider.get_page_content(page_name)
+        else:
+            local = self.project_dir / "board" / "inbox" / f"{agent_id}.md"
+            text = local.read_text(encoding="utf-8") if local.exists() else ""
+
         if len(text) > MAX_INBOX_CHARS:
             text = text[:MAX_INBOX_CHARS] + "\n... (inbox truncated)"
         return text
@@ -275,10 +297,13 @@ class PlaneBoardAdapter(BoardAdapter):
                 "board/architecture.md", "board/decisions.md",
                 "board/project.md",
             ):
-                page_name = pf.path.replace("board/", "").replace(".md", "")
-                if page_name == "project":
-                    page_name = "project-description"
-                self._provider.update_page(page_name, pf.content)
+                if not self._use_local_files:
+                    page_name = pf.path.replace("board/", "").replace(".md", "")
+                    if page_name == "project":
+                        page_name = "project-description"
+                    self._provider.update_page(page_name, pf.content)
+                else:
+                    self._write_local(pf.path, pf.content, pf.action)
                 written += 1
             elif pf.path.startswith("workspace/") or pf.path.startswith("src/"):
                 # Write to local filesystem
@@ -298,9 +323,12 @@ class PlaneBoardAdapter(BoardAdapter):
                     full_path.write_text(pf.content, encoding="utf-8")
                 written += 1
             elif pf.path.startswith("board/"):
-                # Other board files -> Plane Pages
-                page_name = pf.path.replace("board/", "").replace(".md", "")
-                self._provider.update_page(page_name, pf.content)
+                # Other board files -> Plane Pages or local files
+                if not self._use_local_files:
+                    page_name = pf.path.replace("board/", "").replace(".md", "")
+                    self._provider.update_page(page_name, pf.content)
+                else:
+                    self._write_local(pf.path, pf.content, pf.action)
                 written += 1
 
         return written
@@ -423,20 +451,44 @@ class PlaneBoardAdapter(BoardAdapter):
             i += 1
 
     def _apply_inbox_message(self, path: str, content: str, from_agent: str) -> None:
-        """Send an inbox message via Plane Page."""
+        """Send an inbox message via Plane Page or local file."""
         match = re.search(r'board/inbox/(\w+)\.md', path)
         if not match:
             return
         to_agent = match.group(1)
-        page_name = f"inbox-{to_agent}"
 
-        existing = self._provider.get_page_content(page_name)
-        new_content = existing + "\n" + content if existing.strip() else content
-        self._provider.update_page(page_name, new_content)
+        if not self._use_local_files:
+            page_name = f"inbox-{to_agent}"
+            existing = self._provider.get_page_content(page_name)
+            new_content = existing + "\n" + content if existing.strip() else content
+            self._provider.update_page(page_name, new_content)
+        else:
+            self._write_local(path, content, "append")
 
     def _apply_standup(self, content: str) -> None:
-        """Accumulate standup entry and write to Plane Page."""
+        """Accumulate standup entry and write to local file."""
         self._standup_entries.append(content)
+        # Also write to local standup file
+        standup_file = self.project_dir / "board" / "standup.md"
+        standup_file.parent.mkdir(parents=True, exist_ok=True)
+        existing = standup_file.read_text(encoding="utf-8") if standup_file.exists() else ""
+        standup_file.write_text(existing + "\n" + content, encoding="utf-8")
+
+    def _write_local(self, path: str, content: str, action: str) -> None:
+        """Write a file to the local project directory."""
+        full_path = (self.project_dir / path).resolve()
+        resolved_base = self.project_dir.resolve()
+        try:
+            full_path.relative_to(resolved_base)
+        except ValueError:
+            logger.warning("SECURITY: path traversal blocked: %s", path)
+            return
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        if action == "append" and full_path.exists():
+            existing = full_path.read_text(encoding="utf-8")
+            full_path.write_text(existing + "\n" + content, encoding="utf-8")
+        else:
+            full_path.write_text(content, encoding="utf-8")
 
     # =====================================================================
     # Inbox
@@ -446,20 +498,29 @@ class PlaneBoardAdapter(BoardAdapter):
         return self._get_inbox_text(agent_id)
 
     def archive_inbox(self, agent_id: str) -> None:
-        """Archive and clear agent's inbox Page."""
-        page_name = f"inbox-{agent_id}"
-        content = self._provider.get_page_content(page_name)
-        if content.strip():
-            # Append to archive page
-            archive_name = f"archive-{agent_id}"
-            existing_archive = self._provider.get_page_content(archive_name)
-            separator = f"\n\n---\n\n"
-            new_archive = existing_archive + separator + content if existing_archive.strip() else content
-            self._provider.update_page(archive_name, new_archive)
-
-            # Clear inbox
-            self._provider.update_page(page_name, "")
-            self._client.cache.invalidate_prefix("pages")
+        """Archive and clear agent's inbox."""
+        if not self._use_local_files:
+            page_name = f"inbox-{agent_id}"
+            content = self._provider.get_page_content(page_name)
+            if content.strip():
+                archive_name = f"archive-{agent_id}"
+                existing_archive = self._provider.get_page_content(archive_name)
+                separator = "\n\n---\n\n"
+                new_archive = existing_archive + separator + content if existing_archive.strip() else content
+                self._provider.update_page(archive_name, new_archive)
+                self._provider.update_page(page_name, "")
+                self._client.cache.invalidate_prefix("pages")
+        else:
+            inbox_file = self.project_dir / "board" / "inbox" / f"{agent_id}.md"
+            if inbox_file.exists():
+                content = inbox_file.read_text(encoding="utf-8")
+                if content.strip():
+                    from datetime import datetime
+                    archive_dir = self.project_dir / "board" / "archive" / agent_id
+                    archive_dir.mkdir(parents=True, exist_ok=True)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    (archive_dir / f"{ts}.md").write_text(content, encoding="utf-8")
+                    inbox_file.write_text("", encoding="utf-8")
 
     # =====================================================================
     # Standup
@@ -467,9 +528,17 @@ class PlaneBoardAdapter(BoardAdapter):
 
     def init_standup(self, sprint_num: int, cycle_num: int) -> None:
         """Initialize standup for a new cycle."""
-        self._standup_entries = [f"# Standup — Sprint {sprint_num}, Cycle {cycle_num}\n"]
-        page_name = f"standup-s{sprint_num}-c{cycle_num}"
-        self._provider.update_page(page_name, self._standup_entries[0])
+        header = f"# Standup — Sprint {sprint_num}, Cycle {cycle_num}\n"
+        self._standup_entries = [header]
+
+        if not self._use_local_files:
+            page_name = f"standup-s{sprint_num}-c{cycle_num}"
+            self._provider.update_page(page_name, header)
+
+        # Always write local standup file too
+        standup_file = self.project_dir / "board" / "standup.md"
+        standup_file.parent.mkdir(parents=True, exist_ok=True)
+        standup_file.write_text(header, encoding="utf-8")
 
     # =====================================================================
     # Board readiness
@@ -486,17 +555,27 @@ class PlaneBoardAdapter(BoardAdapter):
         # Set up states and labels
         self._provider.init()
 
-        # Ensure inbox pages exist for all agents
-        if agents_config:
-            for agent_id in agents_config.get("agents", {}):
-                page_name = f"inbox-{agent_id}"
+        if not self._use_local_files:
+            # Ensure inbox pages exist for all agents
+            if agents_config:
+                for agent_id in agents_config.get("agents", {}):
+                    page_name = f"inbox-{agent_id}"
+                    if not self._provider.get_page(page_name):
+                        self._provider.create_page(page_name, "")
+
+            # Ensure documentation pages exist
+            for page_name in ["project-description", "architecture", "decisions"]:
                 if not self._provider.get_page(page_name):
                     self._provider.create_page(page_name, "")
-
-        # Ensure documentation pages exist
-        for page_name in ["project-description", "architecture", "decisions"]:
-            if not self._provider.get_page(page_name):
-                self._provider.create_page(page_name, "")
+        else:
+            # Ensure local inbox files exist
+            if agents_config:
+                inbox_dir = self.project_dir / "board" / "inbox"
+                inbox_dir.mkdir(parents=True, exist_ok=True)
+                for agent_id in agents_config.get("agents", {}):
+                    inbox_file = inbox_dir / f"{agent_id}.md"
+                    if not inbox_file.exists():
+                        inbox_file.write_text("", encoding="utf-8")
 
     # =====================================================================
     # Text exports
@@ -585,10 +664,13 @@ class PlaneBoardAdapter(BoardAdapter):
     # =====================================================================
 
     def send_inbox_message(self, to_agent: str, from_name: str, message: str) -> None:
-        """Send a message to an agent's Plane inbox Page."""
-        page_name = f"inbox-{to_agent}"
-        existing = self._provider.get_page_content(page_name)
-
+        """Send a message to an agent's inbox."""
         formatted = f"\n## Message from {from_name}\n{message}\n"
-        new_content = existing + formatted if existing.strip() else formatted
-        self._provider.update_page(page_name, new_content)
+
+        if not self._use_local_files:
+            page_name = f"inbox-{to_agent}"
+            existing = self._provider.get_page_content(page_name)
+            new_content = existing + formatted if existing.strip() else formatted
+            self._provider.update_page(page_name, new_content)
+        else:
+            self._write_local(f"board/inbox/{to_agent}.md", formatted, "append")

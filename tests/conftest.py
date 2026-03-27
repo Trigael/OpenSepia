@@ -35,6 +35,7 @@ def clean_env(monkeypatch):
     """Remove all provider-related env vars to ensure a clean state."""
     env_vars = [
         "BOARD_SERVER_URL",
+        "PLANE_API_KEY", "PLANE_WORKSPACE_SLUG", "PLANE_PROJECT_ID", "PLANE_BASE_URL",
         "GITLAB_URL", "GITLAB_TOKEN", "GITLAB_PROJECT_ID",
         "GITHUB_TOKEN", "GITHUB_OWNER", "GITHUB_REPO", "GITHUB_API_URL",
         "GIT_REPO_URL", "GIT_REPO_PATH", "GIT_USER_NAME", "GIT_USER_EMAIL",

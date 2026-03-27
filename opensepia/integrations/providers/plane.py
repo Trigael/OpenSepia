@@ -226,9 +226,25 @@ class PlaneProvider(BoardProvider):
         })
 
     # ----- Pages (Documentation) -----
+    # Pages API is not available in all Plane versions (e.g., v1.2.3).
+    # When unavailable, these methods return empty/no-op and the adapter
+    # falls back to local markdown files for inbox, standup, and docs.
+
+    @property
+    def pages_available(self) -> bool:
+        """Check if Pages API is available on this Plane instance."""
+        cached = self._client.cache.get("pages_available")
+        if cached is not None:
+            return cached
+        result = self._client.api("GET", "/pages/")
+        available = not (isinstance(result, dict) and result.get("error") in (404, "Page not found."))
+        self._client.cache.set("pages_available", available)
+        return available
 
     def get_page(self, name: str) -> Optional[dict]:
         """Get a page by name. Returns the page dict or None."""
+        if not self.pages_available:
+            return None
         pages = self._list_pages()
         for page in pages:
             if page.get("name", "").strip().lower() == name.lower():
@@ -244,6 +260,8 @@ class PlaneProvider(BoardProvider):
 
     def create_page(self, name: str, content: str) -> dict:
         """Create a new page."""
+        if not self.pages_available:
+            return {}
         result = self._client.api("POST", "/pages/", data={
             "name": name,
             "description": content,
@@ -254,6 +272,8 @@ class PlaneProvider(BoardProvider):
 
     def update_page(self, name: str, content: str) -> dict:
         """Update a page's content. Creates if it doesn't exist."""
+        if not self.pages_available:
+            return {}
         page = self.get_page(name)
         if page:
             result = self._client.api("PATCH", f"/pages/{page['id']}/", data={
@@ -264,6 +284,8 @@ class PlaneProvider(BoardProvider):
         return self.create_page(name, content)
 
     def _list_pages(self) -> list[dict]:
+        if not self.pages_available:
+            return []
         result = self._client.get_cached("pages", "/pages/")
         if isinstance(result, dict) and "results" in result:
             return result["results"]
