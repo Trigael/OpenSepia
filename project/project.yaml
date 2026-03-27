@@ -6,11 +6,10 @@ limits:
 project:
   description: 'Build a production-ready project board server for AI agent workflows.
     Tech: Python 3.10+, FastAPI, SQLite, vanilla HTML/JS frontend. Features: REST
-    API for items (stories/bugs) with configurable YAML schema, comments with author
-    tracking, agent inbox system, event system with webhooks, web UI with kanban board
-    and item detail, sprint management, full-text search, sequential IDs (STORY-001),
-    thread-safe SQLite. No external deps beyond fastapi + uvicorn + pyyaml. Test suite
-    required.'
+    API for items with configurable YAML schema, comments with author tracking, agent
+    inbox system, event system with webhooks, web UI with kanban board, sprint management,
+    full-text search, sequential IDs, thread-safe SQLite. No external deps beyond
+    fastapi + uvicorn + pyyaml. Test suite required.'
   name: Board Server v2
   paths:
     archive: board/archive
@@ -24,6 +23,6 @@ project:
     framework: fastapi
     language: python
 sprint:
-  current_cycle: 0
-  current_sprint: 2
+  current_cycle: 5
+  current_sprint: 1
   cycles_per_sprint: 10

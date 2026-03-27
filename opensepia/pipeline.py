@@ -45,6 +45,10 @@ class PipelineContext:
     dry_run: bool = False
     no_increment: bool = False
 
+    # Per-agent tracking (set by AgentStep, read by AgentCommitStep/AgentSyncStep)
+    current_agent_id: str | None = None
+    current_agent_result: dict[str, Any] | None = None
+
     # Board adapter (set by caller — required for agent execution)
     board_adapter: BoardAdapter | None = None  # None only in tests that don't run agents
 

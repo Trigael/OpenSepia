@@ -168,8 +168,8 @@ class TestE2EBoardServer:
         mock_result.response_size = len(MOCK_AGENT_RESPONSE)
         mock_result.error = None
 
-        with patch("opensepia.steps.agent_runner.invoke_agent", return_value=mock_result):
-            pipeline = build_pipeline(ctx.agents_config)
+        with patch("opensepia.steps.agent_step.invoke_agent", return_value=mock_result):
+            pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             result_ctx = pipeline.run(ctx)
 
         # Pipeline should complete without errors
@@ -188,8 +188,8 @@ class TestE2EBoardServer:
         mock_result.response_size = len(MOCK_AGENT_RESPONSE)
         mock_result.error = None
 
-        with patch("opensepia.steps.agent_runner.invoke_agent", return_value=mock_result):
-            pipeline = build_pipeline(ctx.agents_config)
+        with patch("opensepia.steps.agent_step.invoke_agent", return_value=mock_result):
+            pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             pipeline.run(ctx)
 
         # Check board server state
@@ -210,8 +210,8 @@ class TestE2EBoardServer:
         mock_result.response_size = len(MOCK_AGENT_RESPONSE)
         mock_result.error = None
 
-        with patch("opensepia.steps.agent_runner.invoke_agent", return_value=mock_result):
-            pipeline = build_pipeline(ctx.agents_config)
+        with patch("opensepia.steps.agent_step.invoke_agent", return_value=mock_result):
+            pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             pipeline.run(ctx)
 
         # Check dev1's inbox on the board server
@@ -231,8 +231,8 @@ class TestE2EBoardServer:
         mock_result.response_size = len(MOCK_AGENT_RESPONSE)
         mock_result.error = None
 
-        with patch("opensepia.steps.agent_runner.invoke_agent", return_value=mock_result):
-            pipeline = build_pipeline(ctx.agents_config)
+        with patch("opensepia.steps.agent_step.invoke_agent", return_value=mock_result):
+            pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             pipeline.run(ctx)
 
         # Check workspace file exists
@@ -253,8 +253,8 @@ class TestE2EBoardServer:
         mock_result.response_size = len(MOCK_AGENT_RESPONSE)
         mock_result.error = None
 
-        with patch("opensepia.steps.agent_runner.invoke_agent", return_value=mock_result):
-            pipeline = build_pipeline(ctx.agents_config)
+        with patch("opensepia.steps.agent_step.invoke_agent", return_value=mock_result):
+            pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             pipeline.run(ctx)
 
         # PO's inbox should be empty (archived)
@@ -276,8 +276,8 @@ class TestE2EBoardServer:
         mock_result.response_size = len(MOCK_AGENT_RESPONSE)
         mock_result.error = None
 
-        with patch("opensepia.steps.agent_runner.invoke_agent", return_value=mock_result):
-            pipeline = build_pipeline(ctx.agents_config)
+        with patch("opensepia.steps.agent_step.invoke_agent", return_value=mock_result):
+            pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             pipeline.run(ctx)
 
         # Sprint.md and backlog.md should NOT exist (data lives on board server)

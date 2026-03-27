@@ -15,7 +15,7 @@ from opensepia.lockfile import ProcessLock
 from opensepia.pipeline import Pipeline, PipelineContext
 from opensepia.steps.board_health import BoardHealthStep, SnapshotStep
 from opensepia.steps.sprint_check import SprintCheckStep, SprintSyncStep
-from opensepia.steps.agent_runner import AgentRunnerStep
+from opensepia.steps.agent_step import AgentStep, AgentCommitStep, AgentSyncStep, InitStandupStep
 from opensepia.steps.standup_sync import StandupSyncStep
 from opensepia.steps.merge_mrs import MergeMRsStep
 from opensepia.steps.git_sync import GitSyncStep
@@ -26,19 +26,27 @@ from opensepia.steps.alerting import AlertingStep
 logger = logging.getLogger(__name__)
 
 
-# Registry of all available pipeline steps
+# Registry of non-parameterized pipeline steps
 STEP_REGISTRY = {
     "board_health": BoardHealthStep,
     "sprint_check": SprintCheckStep,
     "snapshot": SnapshotStep,
-    "agent_runner": AgentRunnerStep,
+    "init_standup": InitStandupStep,
     "sprint_sync": SprintSyncStep,
     "standup_sync": StandupSyncStep,
     "merge_mrs": MergeMRsStep,
     "git_sync": GitSyncStep,
+    "git_push": GitSyncStep,  # alias for future rename
     "board_sync": BoardSyncStep,
     "cycle_log": CycleLogStep,
     "alerting": AlertingStep,
+}
+
+# Registry of parameterized steps (take agent_id as argument)
+PARAMETERIZED_REGISTRY = {
+    "run_agent": AgentStep,
+    "commit": AgentCommitStep,
+    "sync": AgentSyncStep,
 }
 
 # Default step order (used when YAML doesn't specify)
@@ -49,24 +57,56 @@ DEFAULT_PIPELINE = [
 ]
 
 
-def build_pipeline(agents_config: dict | None = None) -> Pipeline:
+def build_pipeline(agents_config: dict | None = None, agent_ids: list[str] | None = None) -> Pipeline:
     """Construct the pipeline from YAML config or defaults.
 
-    Reads the 'pipeline' key from agents.yaml to determine which steps
-    run and in what order. Unknown step names are skipped with a warning.
+    Handles three step formats:
+    - Simple step name: "board_health" → STEP_REGISTRY["board_health"]()
+    - agent_runner: expands to per-agent triplets (init_standup + run/commit/sync per agent)
+    - Parameterized: "run_agent:dev1" → PARAMETERIZED_REGISTRY["run_agent"]("dev1")
     """
     step_names = DEFAULT_PIPELINE
 
     if agents_config and "pipeline" in agents_config:
         step_names = agents_config["pipeline"]
 
+    if agent_ids is None:
+        agent_ids = []
+
     steps = []
-    for name in step_names:
+    for entry in step_names:
+        if not isinstance(entry, str):
+            # Future: handle dict entries like agent_group
+            log.warn(f"Unsupported pipeline entry type: {type(entry)} — skipping")
+            continue
+
+        name = entry.strip()
+
+        # Special case: agent_runner expands to per-agent steps
+        if name == "agent_runner":
+            steps.append(InitStandupStep())
+            for aid in agent_ids:
+                steps.append(AgentStep(aid))
+                steps.append(AgentCommitStep(aid))
+                steps.append(AgentSyncStep(aid))
+            continue
+
+        # Parameterized step: "run_agent:dev1"
+        if ":" in name:
+            step_type, param = name.split(":", 1)
+            cls = PARAMETERIZED_REGISTRY.get(step_type)
+            if cls:
+                steps.append(cls(param))
+            else:
+                log.warn(f"Unknown parameterized step '{step_type}' — skipping")
+            continue
+
+        # Simple step
         cls = STEP_REGISTRY.get(name)
         if cls:
             steps.append(cls())
         else:
-            log.warn(f"Unknown pipeline step '{name}' in agents.yaml — skipping")
+            log.warn(f"Unknown pipeline step '{name}' — skipping")
 
     return Pipeline(steps=steps)
 
@@ -79,42 +119,29 @@ def check_claude_cli() -> bool:
 def check_project_ready(config: OrchestratorConfig) -> list[str]:
     """Check if the project is ready to run. Returns list of issues (empty = ready)."""
     issues = []
-
-    # Check project dir exists
     if not config.project_dir.exists():
         issues.append("Project directory does not exist. Run: opensepia init <name>")
         return issues
-
-    # Check project.yaml
     if not (config.project_dir / "project.yaml").exists():
         issues.append("No project.yaml found. Run: opensepia init <name>")
         return issues
-
-    # Check board files
     board = config.board_dir
     if not board.exists() or not (board / "sprint.md").exists():
         issues.append("Board not initialized. Run: opensepia init <name>")
-
-    # Check workspace
     workspace = config.workspace_dir
     if not workspace.exists():
         issues.append("Workspace directory missing. Run: opensepia init <name>")
-
     return issues
 
 
 def check_workspace_git(config: OrchestratorConfig) -> dict:
-    """Check git status of the workspace. Returns status dict."""
+    """Check git status of the workspace."""
     workspace = config.workspace_dir
     git_dir = workspace / ".git"
-
     if not workspace.exists():
         return {"initialized": False, "reason": "workspace missing"}
-
     if not git_dir.exists():
         return {"initialized": False, "reason": "no git"}
-
-    # Check for remote
     import subprocess
     try:
         result = subprocess.run(
@@ -125,9 +152,7 @@ def check_workspace_git(config: OrchestratorConfig) -> dict:
         has_remote = bool(result.stdout.strip())
     except Exception:
         has_remote = False
-
     repo_url = os.environ.get("GIT_REPO_URL", "")
-
     return {
         "initialized": True,
         "has_remote": has_remote,
@@ -165,14 +190,12 @@ def cmd_run(argv: list[str]) -> None:
         log.error(str(e))
         sys.exit(1)
 
-    # Check project is ready
     issues = check_project_ready(config)
     if issues:
         for issue in issues:
             log.error(issue)
         sys.exit(1)
 
-    # Config validation warnings (non-blocking)
     config_warnings = config.validate()
     for w in config_warnings:
         log.warn(w)
@@ -183,13 +206,8 @@ def cmd_run(argv: list[str]) -> None:
         log.error(str(e))
         sys.exit(1)
 
-    # Git status hint (not an error — git is optional)
     git_info = check_workspace_git(config)
-    git_label = ""
-    if git_info["initialized"]:
-        git_label = " + git"
-    else:
-        git_label = " (no git)"
+    git_label = " + git" if git_info["initialized"] else " (no git)"
 
     log.banner([
         "OpenSepia — Single Cycle",
@@ -205,7 +223,6 @@ def cmd_run(argv: list[str]) -> None:
         sys.exit(0)
 
     try:
-        # Create board adapter (auto-selects based on BOARD_SERVER_URL)
         from opensepia.board_adapter import create_board_adapter
         board_adapter = create_board_adapter(
             config.board_dir, config.workspace_dir, config.project_dir,
@@ -231,7 +248,6 @@ def cmd_run(argv: list[str]) -> None:
             board_adapter=board_adapter,
         )
 
-        # Check for interrupted cycle
         from opensepia.cycle_state import CycleState, CYCLE_STATE_FILE
         state_path = config.project_dir / CYCLE_STATE_FILE
         resume_state = CycleState.load(state_path)
@@ -242,7 +258,7 @@ def cmd_run(argv: list[str]) -> None:
         else:
             resume_state = None
 
-        pipeline = build_pipeline(config.agents)
+        pipeline = build_pipeline(config.agents, agent_ids=agent_ids)
         ctx = pipeline.run(ctx, resume_state=resume_state)
 
         if ctx.errors:

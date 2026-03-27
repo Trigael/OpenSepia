@@ -345,7 +345,7 @@ class OrchestratorDaemon:
             if not resume_state.is_interrupted:
                 resume_state = None
 
-            pipeline = build_pipeline(config.agents)
+            pipeline = build_pipeline(config.agents, agent_ids=agent_ids)
             ctx = pipeline.run(ctx, resume_state=resume_state)
 
             errors = [str(e) for e in ctx.errors]
