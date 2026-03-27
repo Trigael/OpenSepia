@@ -8,15 +8,13 @@ comments, and inbox messaging.
 The board server doesn't manage git/MRs — those methods are no-ops.
 """
 
-import json
 import logging
 import os
-import urllib.request
-import urllib.parse
-import urllib.error
-from typing import Any, Optional, Union
+from typing import Any, Optional
 
+from opensepia.config import HTTP_REQUEST_TIMEOUT
 from ..base import BoardProvider, BOARD_LABELS, PRIORITY_LABELS
+from .http_mixin import HTTPMixin, build_url
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +32,18 @@ class BoardServerConfig:
         return f"{self.url}/api"
 
 
+def _boardserver_headers(agent_id: str = "opensepia") -> dict:
+    """Build board-server-specific request headers."""
+    headers = {
+        "Content-Type": "application/json",
+        "X-Agent-Id": agent_id,
+    }
+    token = os.environ.get("BOARD_SERVER_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def _api_call(
     config: BoardServerConfig,
     method: str,
@@ -41,41 +51,16 @@ def _api_call(
     data: Optional[dict] = None,
     params: Optional[dict] = None,
     agent_id: str = "opensepia",
-) -> Union[dict, list]:
+):
     """Perform an API call to the board server."""
-    url = f"{config.api_base}{endpoint}"
-
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-
-    body = json.dumps(data).encode("utf-8") if data else None
-
-    req = urllib.request.Request(
+    url = build_url(config.api_base, endpoint, params)
+    return HTTPMixin._http_request(
         url,
-        data=body,
         method=method,
-        headers={
-            "Content-Type": "application/json",
-            "X-Agent-Id": agent_id,
-        },
+        headers=_boardserver_headers(agent_id),
+        data=data,
+        timeout=HTTP_REQUEST_TIMEOUT,
     )
-
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            response_body = resp.read().decode("utf-8")
-            if response_body:
-                return json.loads(response_body)
-            return {"status": "ok"}
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8", errors="replace")
-        try:
-            error_data = json.loads(error_body)
-            return {"error": e.code, "message": error_data.get("error", error_body)}
-        except json.JSONDecodeError:
-            return {"error": e.code, "message": error_body}
-    except Exception as e:
-        logger.error("Board Server API %s %s: %s", method, endpoint, e)
-        return {"error": str(e)}
 
 
 class BoardServerProvider(BoardProvider):

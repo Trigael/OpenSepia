@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from opensepia import log
-from opensepia.config import OrchestratorConfig
+from opensepia.config import OrchestratorConfig, CLI_CHECK_TIMEOUT
 from opensepia.errors import ConfigError
 from opensepia.commands.run import check_claude_cli
 
@@ -145,7 +145,7 @@ def cmd_init(argv: list[str]) -> None:
 
 
 def cmd_reset(argv: list[str]) -> None:
-    """Reset project — clears board, workspace, and logs."""
+    """Reset project — clears board, workspace, and logs. Run 'opensepia init' after."""
     import shutil as _shutil
 
     parser = argparse.ArgumentParser(prog="opensepia reset", description="Reset project")
@@ -156,10 +156,11 @@ def cmd_reset(argv: list[str]) -> None:
     project_dir = tool_dir / "project"
 
     if not args.yes:
-        log.warn("This will delete:")
-        log.info(f"- {project_dir / 'board'}/ (sprint, backlog, inbox)")
-        log.info(f"- {project_dir / 'workspace' / 'src'}/")
-        log.info(f"- {project_dir / 'logs'}/")
+        log.warn("This will delete ALL project data:")
+        log.info(f"  - {project_dir / 'board'}/     (sprint, backlog, inbox, decisions)")
+        log.info(f"  - {project_dir / 'workspace'}/  (all agent-written code)")
+        log.info(f"  - {project_dir / 'logs'}/       (cycle logs, daemon logs)")
+        log.info(f"  - project.yaml sprint/cycle counters")
         log.info("")
         confirm = input("  Are you sure? (yes/no): ")
         if confirm.lower() != "yes":
@@ -173,31 +174,57 @@ def cmd_reset(argv: list[str]) -> None:
         if state.is_process_alive():
             log.info("Stopping daemon...")
             stop_daemon()
-    except Exception:
-        pass
+    except (ImportError, RuntimeError, OSError) as e:
+        log.warn(f"Could not stop daemon: {e}")
 
+    # Clean up lockfiles and daemon state
+    for name in ["daemon.lock", "daemon_state.json", "cycle_state.json",
+                  "dev-team.lock", "minimal.lock", "all.lock", "security.lock"]:
+        p = project_dir / "logs" / name
+        if p.exists():
+            p.unlink(missing_ok=True)
+        p2 = tool_dir / "logs" / name
+        if p2.exists():
+            p2.unlink(missing_ok=True)
+
+    # Clear board
     board = project_dir / "board"
     if board.exists():
         _shutil.rmtree(board)
-    for d in ["inbox", "archive", ".snapshot"]:
-        (board / d).mkdir(parents=True, exist_ok=True)
+    board.mkdir(parents=True, exist_ok=True)
     log.success("Board cleared")
 
-    workspace_src = project_dir / "workspace" / "src"
-    if workspace_src.exists():
-        _shutil.rmtree(workspace_src)
-    workspace_src.mkdir(parents=True, exist_ok=True)
-    (workspace_src / ".gitkeep").touch()
+    # Clear entire workspace
+    workspace = project_dir / "workspace"
+    if workspace.exists():
+        _shutil.rmtree(workspace)
+    workspace.mkdir(parents=True, exist_ok=True)
     log.success("Workspace cleared")
 
+    # Clear logs
     logs = project_dir / "logs"
     if logs.exists():
         _shutil.rmtree(logs)
     logs.mkdir(parents=True, exist_ok=True)
     log.success("Logs cleared")
 
+    # Reset project.yaml counters (keep project section empty for init to fill)
+    import yaml as _yaml
+    project_file = project_dir / "project.yaml"
+    if project_file.exists():
+        try:
+            with open(project_file, "r", encoding="utf-8") as f:
+                cfg = _yaml.safe_load(f) or {}
+            cfg["sprint"] = {"current_sprint": 1, "current_cycle": 0}
+            cfg["project"] = {}
+            with open(project_file, "w", encoding="utf-8") as f:
+                _yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True)
+            log.success("project.yaml reset")
+        except (_yaml.YAMLError, OSError) as e:
+            log.warn(f"Could not reset project.yaml: {e}")
+
     log.info("")
-    log.success("Reset complete. Run 'opensepia init <name>' to start a new project.")
+    log.success("Reset complete. Run 'opensepia init <name> <description>' to start a new project.")
 
 
 def cmd_setup(argv: list[str]) -> None:
@@ -214,10 +241,10 @@ def cmd_setup(argv: list[str]) -> None:
     log.header("1. Claude Code CLI")
     if check_claude_cli():
         try:
-            result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5)
+            result = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=CLI_CHECK_TIMEOUT)
             version = result.stdout.strip() or "installed"
             log.success(f"Claude CLI: {version}")
-        except Exception:
+        except (subprocess.SubprocessError, OSError):
             log.success("Claude CLI: found")
     else:
         log.error("Claude Code CLI not found")

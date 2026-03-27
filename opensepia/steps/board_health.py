@@ -34,7 +34,7 @@ class BoardHealthStep:
             else:
                 log.step_detail("board_health", "All board files present")
 
-            ctx.board_adapter.ensure_board_ready()
+            ctx.board_adapter.ensure_board_ready(ctx.agents_config)
             return ctx
 
         # Fallback: direct file checks
@@ -74,7 +74,7 @@ class BoardHealthStep:
             log.step("board_health", "Restoring from snapshot...")
             try:
                 restore_from_snapshot(board_dir)
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 log.step_detail("board_health", f"Snapshot failed: {e}")
 
         still_missing = any(
@@ -85,7 +85,7 @@ class BoardHealthStep:
             log.step("board_health", "Trying provider restore...")
             try:
                 restore_from_provider(board_dir)
-            except Exception as e:
+            except (ImportError, OSError, ValueError, KeyError) as e:
                 log.step_detail("board_health", f"Provider restore failed: {e}")
 
 

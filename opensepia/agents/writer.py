@@ -21,7 +21,7 @@ def read_file_safe(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
-    except Exception as e:
+    except OSError as e:
         return f"[READ ERROR: {e}]"
 
 
@@ -80,5 +80,5 @@ def _handle_provider_comments(
                 for pf in parsed_files
             ]
             post_agent_messages_to_provider(agent_id, files_as_dicts, provider)
-    except Exception as e:
+    except (ImportError, OSError, ValueError, KeyError) as e:
         logger.warning("Provider comments: %s", e)

@@ -5,15 +5,59 @@ Developer agent uses this to commit and push code.
 DevOps agent manages infrastructure manifests.
 """
 
+from __future__ import annotations
+
 import os
+import re
+import stat
 import subprocess
 import json
 import logging
+import tempfile
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Any
+
+from opensepia.config import GIT_CMD_TIMEOUT
 
 logger = logging.getLogger(__name__)
+
+
+def _redact_credentials(text: str) -> str:
+    """Remove tokens/passwords from URLs in log output."""
+    return re.sub(r"(https?://)([^@/]+)@", r"\1***@", text)
+
+
+class _AskPassHelper:
+    """Context manager that creates a temporary GIT_ASKPASS script.
+
+    The script echoes the token on stdout, keeping the credential out of
+    /proc/pid/cmdline.  The temp file is removed on exit.
+    """
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+        self._path: str | None = None
+
+    def __enter__(self) -> dict[str, str]:
+        """Return env-dict entries that make git use the helper."""
+        if not self._token:
+            return {}
+        fd, self._path = tempfile.mkstemp(suffix=".sh", prefix="git_askpass_")
+        # Write a POSIX shell script that prints the token.
+        # Escape single quotes to prevent shell injection.
+        safe_token = self._token.replace("'", "'\\''")
+        with os.fdopen(fd, "w") as fh:
+            fh.write(f"#!/bin/sh\necho '{safe_token}'\n")
+        os.chmod(self._path, stat.S_IRWXU)
+        return {
+            "GIT_ASKPASS": self._path,
+            "GIT_TERMINAL_PROMPT": "0",
+        }
+
+    def __exit__(self, *exc):  # type: ignore[no-untyped-def]
+        if self._path and os.path.exists(self._path):
+            os.unlink(self._path)
 
 
 class GitConfig:
@@ -26,7 +70,7 @@ class GitConfig:
         self.auto_push: bool = os.getenv("GIT_AUTO_PUSH", "true").lower() == "true"
         # SSH key or token for push
         self.ssh_key: str = os.getenv("GIT_SSH_KEY", "")
-        # For HTTPS: https://oauth2:TOKEN@gitlab.com/group/project.git
+        # For HTTPS: token is passed via GIT_ASKPASS (never embedded in URLs)
         self.token: str = os.getenv("GIT_TOKEN", "")
 
         if not self.repo_url:
@@ -41,47 +85,64 @@ class GitConfig:
 
     @property
     def auth_repo_url(self) -> str:
-        """URL with authentication for push."""
+        """URL with username hint for HTTPS (no token embedded).
+
+        For HTTPS repos with a token, we insert the *username* (``oauth2``)
+        into the URL so that git knows which credential to request, but the
+        actual token is supplied at runtime via ``GIT_ASKPASS`` (see
+        ``_AskPassHelper``).  This keeps the secret out of
+        ``/proc/pid/cmdline``.
+        """
         if self.token and self.repo_url.startswith("https://"):
-            # Insert token into URL
-            url = self.repo_url.replace("https://", f"https://oauth2:{self.token}@")
-            return url
+            return self.repo_url.replace("https://", "https://oauth2@")
         return self.repo_url
+
+    def askpass(self) -> _AskPassHelper:
+        """Return a context-manager that sets up secure credential passing."""
+        return _AskPassHelper(self.token)
 
 
 class GitClient:
     """Git operations for AI agents."""
 
-    def __init__(self, config: Optional[GitConfig] = None) -> None:
+    def __init__(self, config: GitConfig | None = None) -> None:
         self.config = config or GitConfig()
 
     @property
     def enabled(self) -> bool:
         return self.config.is_configured
 
-    def _run(self, *args: str, cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+    def _run(
+        self,
+        *args: str,
+        cwd: Path | None = None,
+        check: bool = True,
+        extra_env: dict[str, str] | None = None,
+    ) -> subprocess.CompletedProcess:
         """Run a git command."""
         cmd = ["git"] + list(args)
         cwd = cwd or self.config.repo_path
 
-        logger.debug(f"git {' '.join(args)} (cwd={cwd})")
+        logger.debug("git %s (cwd=%s)", _redact_credentials(" ".join(args)), cwd)
+
+        env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": self.config.user_name,
+            "GIT_AUTHOR_EMAIL": self.config.user_email,
+            "GIT_COMMITTER_NAME": self.config.user_name,
+            "GIT_COMMITTER_EMAIL": self.config.user_email,
+        }
+        if extra_env:
+            env.update(extra_env)
 
         result = subprocess.run(
             cmd, cwd=str(cwd),
-            capture_output=True, text=True, timeout=60,
-            env={
-                **os.environ,
-                "GIT_AUTHOR_NAME": self.config.user_name,
-                "GIT_AUTHOR_EMAIL": self.config.user_email,
-                "GIT_COMMITTER_NAME": self.config.user_name,
-                "GIT_COMMITTER_EMAIL": self.config.user_email,
-            }
+            capture_output=True, text=True, timeout=GIT_CMD_TIMEOUT,
+            env=env,
         )
 
         if check and result.returncode != 0:
-            stderr = result.stderr
-            if self.config.token and self.config.token in stderr:
-                stderr = stderr.replace(self.config.token, "***")
+            stderr = _redact_credentials(result.stderr)
             logger.error(f"git {args[0]} failed: {stderr}")
 
         return result
@@ -99,19 +160,22 @@ class GitClient:
         repo_path = self.config.repo_path
 
         if (repo_path / ".git").exists():
-            # Pull
+            # Pull — use askpass so fetch can authenticate without
+            # leaking the token on the command line.
             logger.info(f"Pulling {repo_path}")
-            self._run("fetch", "--all")
+            with self.config.askpass() as cred_env:
+                self._run("fetch", "--all", extra_env=cred_env)
             self._run("reset", "--hard", f"origin/{self.config.main_branch}")
             return True
         else:
             # Clone
             logger.info(f"Cloning {self.config.repo_url} → {repo_path}")
             repo_path.parent.mkdir(parents=True, exist_ok=True)
-            result = self._run(
-                "clone", self.config.auth_repo_url, str(repo_path),
-                cwd=repo_path.parent, check=False
-            )
+            with self.config.askpass() as cred_env:
+                result = self._run(
+                    "clone", self.config.auth_repo_url, str(repo_path),
+                    cwd=repo_path.parent, check=False, extra_env=cred_env,
+                )
             if result.returncode == 0:
                 self._run("config", "user.name", self.config.user_name)
                 self._run("config", "user.email", self.config.user_email)
@@ -122,14 +186,15 @@ class GitClient:
     # Branch operations
     # =========================================================================
 
-    def create_branch(self, branch_name: str, from_branch: Optional[str] = None) -> bool:
+    def create_branch(self, branch_name: str, from_branch: str | None = None) -> bool:
         """Create and switch to a new branch."""
         from_branch = from_branch or self.config.main_branch
 
-        # Update
-        self._run("fetch", "origin")
-        self._run("checkout", from_branch)
-        self._run("pull", "origin", from_branch)
+        # Update — use askpass for authenticated fetch/pull
+        with self.config.askpass() as cred_env:
+            self._run("fetch", "origin", extra_env=cred_env)
+            self._run("checkout", from_branch)
+            self._run("pull", "origin", from_branch, extra_env=cred_env)
 
         # Create branch
         result = self._run("checkout", "-b", branch_name, check=False)
@@ -154,7 +219,7 @@ class GitClient:
     # Commit & Push
     # =========================================================================
 
-    def stage_files(self, paths: Optional[list[str]] = None) -> bool:
+    def stage_files(self, paths: list[str] | None = None) -> bool:
         """Add files to staging."""
         if paths:
             for p in paths:
@@ -191,7 +256,7 @@ class GitClient:
         logger.warning(f"Commit failed: {result.stderr}")
         return False
 
-    def push(self, branch: Optional[str] = None, force: bool = False) -> bool:
+    def push(self, branch: str | None = None, force: bool = False) -> bool:
         """Push to remote."""
         if not self.config.auto_push:
             logger.info("Auto-push disabled, skipping")
@@ -205,7 +270,8 @@ class GitClient:
         # Set upstream
         args.extend(["--set-upstream"])
 
-        result = self._run(*args, check=False)
+        with self.config.askpass() as cred_env:
+            result = self._run(*args, check=False, extra_env=cred_env)
         if result.returncode == 0:
             logger.info(f"Pushed: {branch}")
             return True
@@ -214,7 +280,7 @@ class GitClient:
         return False
 
     def commit_and_push(self, message: str, agent_role: str = "system",
-                        paths: Optional[list[str]] = None, branch: Optional[str] = None) -> dict:
+                        paths: list[str] | None = None, branch: str | None = None) -> dict[str, Any]:
         """Combination: stage + commit + push. Main method for agents."""
         result = {
             "staged": False,
@@ -243,7 +309,7 @@ class GitClient:
                 pushed = self.push()
                 result["pushed"] = pushed
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             result["error"] = str(e)
             logger.exception(f"Git operation failed: {e}")
 
@@ -258,7 +324,7 @@ class GitClient:
         result = self._run("status", "--short")
         return result.stdout.strip()
 
-    def get_diff(self, branch: Optional[str] = None) -> str:
+    def get_diff(self, branch: str | None = None) -> str:
         """Return diff against the main branch."""
         target = branch or self.config.main_branch
         result = self._run("diff", f"origin/{target}...HEAD", "--stat", check=False)
@@ -298,7 +364,7 @@ class GitClient:
 # Workspace -> repo synchronization
 # =============================================================================
 def sync_workspace_to_repo(workspace_dir: Path, repo_dir: Path,
-                           src_subdir: str = "src"):
+                           src_subdir: str = "src") -> None:
     """
     Copy files from workspace to the repo directory.
     This is called before committing so that the Developer can work in the

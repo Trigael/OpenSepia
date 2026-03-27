@@ -104,7 +104,7 @@ def test_context_manager_releases_on_exception(lock_dir):
 # Default lock dir
 # ---------------------------------------------------------------------------
 
-def test_default_lock_dir_is_tempdir():
+def test_default_lock_dir_is_user_specific():
     lock = ProcessLock("default-test")
-    expected_dir = Path(tempfile.gettempdir())
+    expected_dir = Path.home() / ".opensepia" / "locks"
     assert lock.lock_path.parent == expected_dir

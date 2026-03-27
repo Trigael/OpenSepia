@@ -327,7 +327,7 @@ def cmd_history(argv: list[str]) -> None:
             if fail_count > 0 and not args.detail:
                 failed = data.get("agents_failed", [])
                 log.detail(f"    Failed: {', '.join(failed)}")
-        except Exception:
+        except (_json.JSONDecodeError, OSError, KeyError, ValueError):
             continue
 
     log.info("")

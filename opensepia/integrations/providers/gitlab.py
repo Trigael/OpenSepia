@@ -4,20 +4,20 @@ AI Dev Team — GitLab Provider
 BoardProvider implementation for GitLab API v4.
 """
 
-import os
-import json
-import logging
-import time
-import urllib.request
-import urllib.parse
-import urllib.error
-from pathlib import Path
-from typing import Any, Optional, Union
-from dataclasses import dataclass
+from __future__ import annotations
 
+import logging
+import os
+import urllib.parse
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from opensepia.config import PROVIDER_API_TIMEOUT
 from ..base import (
     BoardProvider, BOARD_LABELS, PRIORITY_LABELS, ROLE_LABELS,
 )
+from .http_mixin import HTTPMixin, build_url
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class GitLabConfig:
     token: str = ""
     project_id: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.url = os.getenv("GITLAB_URL", self.url).rstrip("/")
         self.token = os.getenv("GITLAB_TOKEN", self.token)
         self.project_id = os.getenv("GITLAB_PROJECT_ID", self.project_id)
@@ -49,47 +49,28 @@ class GitLabConfig:
 # =============================================================================
 # HTTP helper
 # =============================================================================
+def _gitlab_headers(config: GitLabConfig) -> dict[str, str]:
+    """Build GitLab-specific request headers."""
+    return {
+        "PRIVATE-TOKEN": config.token,
+        "Content-Type": "application/json",
+    }
+
+
 def _api_call(config: GitLabConfig, method: str, endpoint: str,
-              data: Optional[dict] = None, params: Optional[dict] = None,
-              _max_retries: int = 4) -> Union[dict, list]:
+              data: dict[str, Any] | None = None, params: dict[str, Any] | None = None,
+              _max_retries: int = 4) -> Any:
     """Perform an API call to GitLab with retry on 429 rate limit."""
-    url = f"{config.api_base}{endpoint}"
-
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-
-    body = json.dumps(data).encode("utf-8") if data else None
-
-    for attempt in range(_max_retries + 1):
-        req = urllib.request.Request(
-            url,
-            data=body,
-            method=method,
-            headers={
-                "PRIVATE-TOKEN": config.token,
-                "Content-Type": "application/json",
-            }
-        )
-
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                response_body = resp.read().decode("utf-8")
-                if response_body:
-                    return json.loads(response_body)
-                return {"status": "ok"}
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < _max_retries:
-                retry_after = int(e.headers.get("Retry-After", 0))
-                wait = max(retry_after, 2 ** attempt)
-                logger.warning(f"GitLab API 429 on {method} {endpoint}, retry {attempt + 1}/{_max_retries} in {wait}s")
-                time.sleep(wait)
-                continue
-            error_body = e.read().decode("utf-8", errors="replace")
-            logger.error(f"GitLab API {method} {endpoint}: {e.code} — {error_body}")
-            return {"error": e.code, "message": error_body}
-        except Exception as e:
-            logger.error(f"GitLab API {method} {endpoint}: {e}")
-            return {"error": str(e)}
+    url = build_url(config.api_base, endpoint, params)
+    return HTTPMixin._http_request_with_retry(
+        url,
+        method=method,
+        headers=_gitlab_headers(config),
+        data=data,
+        timeout=PROVIDER_API_TIMEOUT,
+        max_retries=_max_retries,
+        retry_on=(429,),
+    )
 
 
 # =============================================================================
@@ -178,7 +159,7 @@ def setup_board(config: GitLabConfig) -> None:
 class GitLabProvider(BoardProvider):
     """GitLab implementation of BoardProvider."""
 
-    def __init__(self, config: Optional[GitLabConfig] = None) -> None:
+    def __init__(self, config: GitLabConfig | None = None) -> None:
         self.config = config or GitLabConfig()
         self._issue_cache: dict[str, int] = {}
 
@@ -209,7 +190,7 @@ class GitLabProvider(BoardProvider):
     # ----- Issues -----
 
     def create_issue(self, title: str, description: str,
-                     labels: list = None, **kwargs) -> dict:
+                     labels: list[str] | None = None, **kwargs: Any) -> dict[str, Any]:
         data = {"title": title, "description": description}
         if labels:
             data["labels"] = ",".join(labels)
@@ -223,20 +204,20 @@ class GitLabProvider(BoardProvider):
             logger.info(f"Issue #{result.get('iid')} created: {title}")
         return result
 
-    def close_issue(self, issue_id: Any) -> dict:
+    def close_issue(self, issue_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "PUT", f"/issues/{issue_id}",
                          data={"state_event": "close"})
 
-    def reopen_issue(self, issue_id: Any) -> dict:
+    def reopen_issue(self, issue_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "PUT", f"/issues/{issue_id}",
                          data={"state_event": "reopen"})
 
-    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict:
+    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict[str, Any]:
         return _api_call(self.config, "PUT", f"/issues/{issue_id}",
                          data={"labels": ",".join(labels)})
 
     def update_issue_status(self, issue_id: Any, from_status: str,
-                            to_status: str) -> dict:
+                            to_status: str) -> dict[str, Any]:
         from_label = BOARD_LABELS.get(from_status)
         to_label = BOARD_LABELS.get(to_status)
 
@@ -252,12 +233,12 @@ class GitLabProvider(BoardProvider):
         return result
 
     def comment_on_issue(self, issue_id: Any, agent_id: str,
-                         message: str) -> dict:
+                         message: str) -> dict[str, Any]:
         body = self._format_agent_comment(agent_id, message)
         return _api_call(self.config, "POST",
                          f"/issues/{issue_id}/notes", data={"body": body})
 
-    def find_issue_by_id(self, story_id: str) -> Optional[int]:
+    def find_issue_by_id(self, story_id: str) -> int | None:
         # 1) In-memory cache
         if story_id in self._issue_cache:
             return self._issue_cache[story_id]
@@ -286,8 +267,8 @@ class GitLabProvider(BoardProvider):
 
         return None
 
-    def list_issues(self, labels: str = None,
-                    state: str = "opened") -> list:
+    def list_issues(self, labels: str | None = None,
+                    state: str = "opened") -> list[dict[str, Any]]:
         params = {"state": state, "per_page": 50}
         if labels:
             params["labels"] = labels
@@ -295,13 +276,13 @@ class GitLabProvider(BoardProvider):
         return result if isinstance(result, list) else []
 
     def search_issues(self, query: str,
-                      state: str = "opened") -> list:
+                      state: str = "opened") -> list[dict[str, Any]]:
         params = {"search": query, "state": state, "per_page": 20}
         result = _api_call(self.config, "GET", "/issues", params=params)
         return result if isinstance(result, list) else []
 
     def get_issue_comments(self, issue_id: Any,
-                           limit: int = 10) -> list:
+                           limit: int = 10) -> list[dict[str, Any]]:
         params = {"sort": "desc", "per_page": limit}
         result = _api_call(self.config, "GET",
                            f"/issues/{issue_id}/notes", params=params)
@@ -309,7 +290,7 @@ class GitLabProvider(BoardProvider):
 
     # ----- Board -----
 
-    def get_board_state(self) -> dict:
+    def get_board_state(self) -> dict[str, list[dict[str, Any]]]:
         state = {}
         for status_key, label_name in BOARD_LABELS.items():
             issues = self.list_issues(labels=label_name)
@@ -357,7 +338,7 @@ class GitLabProvider(BoardProvider):
     # ----- MR -----
 
     def create_mr(self, source_branch: str, target_branch: str = "main",
-                  title: str = "", description: str = "") -> dict:
+                  title: str = "", description: str = "") -> dict[str, Any]:
         data = {
             "source_branch": source_branch,
             "target_branch": target_branch,
@@ -367,26 +348,26 @@ class GitLabProvider(BoardProvider):
         }
         return _api_call(self.config, "POST", "/merge_requests", data=data)
 
-    def list_mrs(self, state: str = "opened") -> list:
+    def list_mrs(self, state: str = "opened") -> list[dict[str, Any]]:
         result = _api_call(self.config, "GET", "/merge_requests",
                            params={"state": state})
         return result if isinstance(result, list) else []
 
-    def get_mr(self, mr_id: Any) -> dict:
+    def get_mr(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "GET", f"/merge_requests/{mr_id}")
 
     def comment_on_mr(self, mr_id: Any, body: str,
-                      agent_id: str = "") -> dict:
+                      agent_id: str = "") -> dict[str, Any]:
         prefix = f"**🤖 {agent_id.upper()}**: " if agent_id else ""
         return _api_call(self.config, "POST",
                          f"/merge_requests/{mr_id}/notes",
                          data={"body": prefix + body})
 
-    def approve_mr(self, mr_id: Any) -> dict:
+    def approve_mr(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "POST",
                          f"/merge_requests/{mr_id}/approve")
 
-    def merge_mr(self, mr_id: Any, squash: bool = False) -> dict:
+    def merge_mr(self, mr_id: Any, squash: bool = False) -> dict[str, Any]:
         data = {
             "squash": squash,
             "should_remove_source_branch": True,
@@ -394,16 +375,16 @@ class GitLabProvider(BoardProvider):
         return _api_call(self.config, "PUT",
                          f"/merge_requests/{mr_id}/merge", data=data)
 
-    def close_mr(self, mr_id: Any) -> dict:
+    def close_mr(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "PUT",
                          f"/merge_requests/{mr_id}",
                          data={"state_event": "close"})
 
-    def get_mr_changes(self, mr_id: Any) -> dict:
+    def get_mr_changes(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "GET",
                          f"/merge_requests/{mr_id}/changes")
 
-    def get_mr_approvals(self, mr_id: Any) -> dict:
+    def get_mr_approvals(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "GET",
                          f"/merge_requests/{mr_id}/approvals")
 
@@ -427,14 +408,14 @@ class GitLabProvider(BoardProvider):
     # ----- Backward-compatible methods -----
 
     def create_story(self, story_id: str, title: str, description: str,
-                     priority: str = "medium", assigned_to: Optional[str] = None) -> dict:
+                     priority: str = "medium", assigned_to: str | None = None) -> dict[str, Any]:
         result = super().create_story(story_id, title, description,
                                       priority, assigned_to)
         if "iid" in result:
             self._issue_cache[story_id] = result["iid"]
         return result
 
-    def create_sprint(self, sprint_number: int, due_date: str = None) -> dict:
+    def create_sprint(self, sprint_number: int, due_date: str | None = None) -> dict[str, Any]:
         """Create a sprint as a milestone (GitLab-specific)."""
         data = {
             "title": f"Sprint {sprint_number}",
@@ -446,23 +427,23 @@ class GitLabProvider(BoardProvider):
 
     # ----- Aliases for backward compatibility with GitLabClient -----
 
-    def comment(self, issue_iid: int, agent_id: str, message: str) -> dict:
+    def comment(self, issue_iid: int, agent_id: str, message: str) -> dict[str, Any]:
         return self.comment_on_issue(issue_iid, agent_id, message)
 
     def update_story_status(self, issue_iid: int,
-                            from_status: str, to_status: str) -> dict:
+                            from_status: str, to_status: str) -> dict[str, Any]:
         return self.update_issue_status(issue_iid, from_status, to_status)
 
-    def close_story(self, issue_iid: int) -> dict:
+    def close_story(self, issue_iid: int) -> dict[str, Any]:
         return self.close_issue(issue_iid)
 
-    def find_issue_by_story_id(self, story_id: str) -> Optional[int]:
+    def find_issue_by_story_id(self, story_id: str) -> int | None:
         return self.find_issue_by_id(story_id)
 
-    def get_issue_notes(self, issue_iid: int, max_notes: int = 10) -> list:
+    def get_issue_notes(self, issue_iid: int, max_notes: int = 10) -> list[dict[str, Any]]:
         return self.get_issue_comments(issue_iid, limit=max_notes)
 
-    def comment_mr(self, mr_iid: int, body: str, agent_id: str = "") -> dict:
+    def comment_mr(self, mr_iid: int, body: str, agent_id: str = "") -> dict[str, Any]:
         return self.comment_on_mr(mr_iid, body, agent_id)
 
 

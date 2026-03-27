@@ -9,9 +9,13 @@ Color support: auto-detected, disabled on Windows without ANSI support
 or when output is piped to a file.
 """
 
+import json
+import logging
 import os
 import sys
 import platform
+import traceback
+from datetime import datetime, timezone
 
 _verbose = False
 _color = False
@@ -136,3 +140,69 @@ def agent_error(agent_name: str, error_msg: str) -> None:
 def agent_retry(delay: int) -> None:
     """Agent retry message."""
     print(f"       {_yellow('retrying')} in {delay}s...")
+
+
+# --- JSON log formatter for daemon/structured logging ---
+
+class JsonFormatter(logging.Formatter):
+    """Structured JSON log formatter.
+
+    Outputs one JSON object per line with fields:
+      timestamp, level, logger, message, and any extra fields.
+    Exception tracebacks are included in an "exception" field.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict = {
+            "timestamp": datetime.fromtimestamp(
+                record.created, tz=timezone.utc
+            ).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+
+        # Include any extra fields attached to the record beyond the standard
+        # LogRecord attributes.
+        _standard = logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys()
+        for key, value in record.__dict__.items():
+            if key not in _standard and key not in (
+                "message", "msg", "args", "exc_info", "exc_text",
+                "stack_info", "created", "levelname", "name",
+            ):
+                entry[key] = value
+
+        if record.exc_info and record.exc_info[1] is not None:
+            entry["exception"] = "".join(
+                traceback.format_exception(*record.exc_info)
+            )
+
+        if record.stack_info:
+            entry["stack_info"] = record.stack_info
+
+        return json.dumps(entry, default=str)
+
+
+def wants_json_logging() -> bool:
+    """Return True if the OPENSEPIA_LOG_FORMAT env var is set to 'json'."""
+    return os.environ.get("OPENSEPIA_LOG_FORMAT", "").lower() == "json"
+
+
+def setup_json_logging(
+    log_path: str,
+    level: int = logging.INFO,
+) -> None:
+    """Configure the root logger with JsonFormatter writing to *log_path*.
+
+    Clears existing handlers and attaches a single FileHandler that
+    emits one JSON object per line.
+    """
+    root = logging.getLogger()
+    root.handlers.clear()
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setLevel(level)
+    handler.setFormatter(JsonFormatter())
+
+    root.addHandler(handler)
+    root.setLevel(level)

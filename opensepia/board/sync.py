@@ -272,7 +272,7 @@ def sync_to_provider(
                     json.dumps(cache_map, indent=2, ensure_ascii=False),
                     encoding="utf-8",
                 )
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"  Issue map cache: write error: {e}")
 
     return created, updated

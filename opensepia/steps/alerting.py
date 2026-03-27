@@ -72,6 +72,6 @@ class AlertingStep:
                 log.step("alerting", f"Alert issue #{result['iid']} created on provider")
             else:
                 log.step_detail("alerting", f"Alert issue creation returned: {result}")
-        except Exception as e:
+        except (ImportError, OSError, ValueError, KeyError) as e:
             logger.warning("Provider alert failed: %s", e)
             log.warn(f"Provider alert failed (non-critical): {e}")

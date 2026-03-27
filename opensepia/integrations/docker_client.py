@@ -5,13 +5,23 @@ DevOps agent manages Docker containers inside the LXC container.
 Supports docker and docker-compose.
 """
 
+from __future__ import annotations
+
 import os
 import subprocess
 import json
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Any
+
+from opensepia.config import (
+    DOCKER_CMD_TIMEOUT,
+    DOCKER_COMPOSE_TIMEOUT,
+    DOCKER_BUILD_TIMEOUT,
+    DOCKER_TRANSFER_TIMEOUT,
+    DOCKER_LOGIN_TIMEOUT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +58,12 @@ class DockerConfig:
 class DockerClient:
     """Docker operations for the DevOps agent."""
 
-    def __init__(self, config: Optional[DockerConfig] = None) -> None:
+    def __init__(self, config: DockerConfig | None = None) -> None:
         self.config = config or DockerConfig()
 
-    def _parse_json_lines(self, output: str) -> list[dict]:
+    def _parse_json_lines(self, output: str) -> list[dict[str, Any]]:
         """Parse newline-delimited JSON output from docker commands."""
-        items: list[dict] = []
+        items: list[dict[str, Any]] = []
         for line in output.strip().split("\n"):
             if line:
                 try:
@@ -62,7 +72,7 @@ class DockerClient:
                     logger.debug("Failed to parse JSON line: %s", line[:200])
         return items
 
-    def _run(self, *args: str, check: bool = True, timeout: int = 120) -> subprocess.CompletedProcess:
+    def _run(self, *args: str, check: bool = True, timeout: int = DOCKER_CMD_TIMEOUT) -> subprocess.CompletedProcess:
         """Run a docker command."""
         cmd = ["docker"] + list(args)
 
@@ -81,7 +91,7 @@ class DockerClient:
 
         return result
 
-    def _run_compose(self, *args: str, cwd: Optional[Path] = None, check: bool = True) -> subprocess.CompletedProcess:
+    def _run_compose(self, *args: str, cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
         """Run a docker-compose command."""
         cmd = ["docker", "compose"] + list(args)
 
@@ -92,7 +102,7 @@ class DockerClient:
         logger.debug(f"docker compose {' '.join(args)}")
 
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
+            cmd, capture_output=True, text=True, timeout=DOCKER_COMPOSE_TIMEOUT,
             cwd=str(cwd) if cwd else None, env=env
         )
 
@@ -105,7 +115,7 @@ class DockerClient:
     # State information
     # =========================================================================
 
-    def ps(self, all: bool = False) -> list[dict]:
+    def ps(self, all: bool = False) -> list[dict[str, Any]]:
         """List running containers."""
         args = ["ps", "--format", "json"]
         if all:
@@ -117,7 +127,7 @@ class DockerClient:
 
         return self._parse_json_lines(result.stdout)
 
-    def inspect(self, container: str) -> dict:
+    def inspect(self, container: str) -> dict[str, Any]:
         """Detailed info about a container."""
         result = self._run("inspect", container, check=False)
         if result.returncode == 0:
@@ -125,7 +135,7 @@ class DockerClient:
             return data[0] if data else {}
         return {"error": result.stderr}
 
-    def logs(self, container: str, tail: int = 100, since: Optional[str] = None) -> str:
+    def logs(self, container: str, tail: int = 100, since: str | None = None) -> str:
         """Logs from a container."""
         args = ["logs", f"--tail={tail}"]
         if since:
@@ -136,7 +146,7 @@ class DockerClient:
         # Docker logs go to stderr
         return result.stdout + result.stderr
 
-    def stats(self, container: Optional[str] = None) -> str:
+    def stats(self, container: str | None = None) -> str:
         """Resource usage statistics."""
         args = ["stats", "--no-stream", "--format",
                 "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}"]
@@ -146,7 +156,7 @@ class DockerClient:
         result = self._run(*args, check=False)
         return result.stdout
 
-    def images(self) -> list[dict]:
+    def images(self) -> list[dict[str, Any]]:
         """List local images."""
         result = self._run("images", "--format", "json", check=False)
         if result.returncode != 0:
@@ -158,8 +168,8 @@ class DockerClient:
     # Build
     # =========================================================================
 
-    def build(self, path: str = ".", tag: Optional[str] = None, dockerfile: Optional[str] = None,
-              build_args: Optional[dict] = None, no_cache: bool = False) -> dict:
+    def build(self, path: str = ".", tag: str | None = None, dockerfile: str | None = None,
+              build_args: dict[str, str] | None = None, no_cache: bool = False) -> dict[str, Any]:
         """Build Docker image."""
         args = ["build"]
 
@@ -179,7 +189,7 @@ class DockerClient:
 
         args.append(path)
 
-        result = self._run(*args, check=False, timeout=600)
+        result = self._run(*args, check=False, timeout=DOCKER_BUILD_TIMEOUT)
 
         return {
             "success": result.returncode == 0,
@@ -192,10 +202,10 @@ class DockerClient:
     # Run / Start / Stop
     # =========================================================================
 
-    def run(self, image: str, name: Optional[str] = None, ports: Optional[dict] = None,
-            volumes: Optional[dict] = None, env: Optional[dict] = None, network: Optional[str] = None,
+    def run(self, image: str, name: str | None = None, ports: dict[str, str] | None = None,
+            volumes: dict[str, str] | None = None, env: dict[str, str] | None = None, network: str | None = None,
             detach: bool = True, restart: str = "unless-stopped",
-            command: Optional[str] = None, labels: Optional[dict] = None) -> dict:
+            command: str | None = None, labels: dict[str, str] | None = None) -> dict[str, Any]:
         """Run a new container."""
 
         # Security check for container count
@@ -244,7 +254,8 @@ class DockerClient:
         args.append(image)
 
         if command:
-            args.extend(command.split())
+            import shlex
+            args.extend(shlex.split(command))
 
         result = self._run(*args, check=False)
 
@@ -262,7 +273,7 @@ class DockerClient:
                 "error": result.stderr,
             }
 
-    def start(self, container: str) -> dict:
+    def start(self, container: str) -> dict[str, Any]:
         """Start a stopped container."""
         result = self._run("start", container, check=False)
         return {
@@ -270,7 +281,7 @@ class DockerClient:
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def stop(self, container: str, timeout: int = 10) -> dict:
+    def stop(self, container: str, timeout: int = 10) -> dict[str, Any]:
         """Stop a container."""
         result = self._run("stop", "-t", str(timeout), container, check=False)
         return {
@@ -278,7 +289,7 @@ class DockerClient:
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def restart(self, container: str) -> dict:
+    def restart(self, container: str) -> dict[str, Any]:
         """Restart a container."""
         result = self._run("restart", container, check=False)
         return {
@@ -286,7 +297,7 @@ class DockerClient:
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def rm(self, container: str, force: bool = False) -> dict:
+    def rm(self, container: str, force: bool = False) -> dict[str, Any]:
         """Remove a container."""
         args = ["rm"]
         if force:
@@ -299,15 +310,15 @@ class DockerClient:
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def pull(self, image: str) -> dict:
+    def pull(self, image: str) -> dict[str, Any]:
         """Pull an image from registry."""
-        result = self._run("pull", image, check=False, timeout=300)
+        result = self._run("pull", image, check=False, timeout=DOCKER_TRANSFER_TIMEOUT)
         return {
             "success": result.returncode == 0,
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def push(self, image: str) -> dict:
+    def push(self, image: str) -> dict[str, Any]:
         """Push an image to registry."""
         # Login if configured
         if self.config.registry_user and self.config.registry_pass:
@@ -318,12 +329,12 @@ class DockerClient:
                 env["DOCKER_HOST"] = self.config.docker_host
             login = subprocess.run(
                 login_cmd, input=self.config.registry_pass,
-                capture_output=True, text=True, timeout=30, env=env
+                capture_output=True, text=True, timeout=DOCKER_LOGIN_TIMEOUT, env=env
             )
             if login.returncode != 0:
                 return {"success": False, "error": f"Login failed: {login.stderr}"}
 
-        result = self._run("push", image, check=False, timeout=300)
+        result = self._run("push", image, check=False, timeout=DOCKER_TRANSFER_TIMEOUT)
         return {
             "success": result.returncode == 0,
             "error": result.stderr if result.returncode != 0 else "",
@@ -333,8 +344,8 @@ class DockerClient:
     # Docker Compose
     # =========================================================================
 
-    def compose_up(self, cwd: Optional[Path] = None, services: Optional[list[str]] = None,
-                   detach: bool = True, build: bool = False) -> dict:
+    def compose_up(self, cwd: Path | None = None, services: list[str] | None = None,
+                   detach: bool = True, build: bool = False) -> dict[str, Any]:
         """Start a docker-compose stack."""
         args = ["up"]
 
@@ -352,7 +363,7 @@ class DockerClient:
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def compose_down(self, cwd: Optional[Path] = None, volumes: bool = False) -> dict:
+    def compose_down(self, cwd: Path | None = None, volumes: bool = False) -> dict[str, Any]:
         """Stop a docker-compose stack."""
         args = ["down"]
         if volumes:
@@ -364,12 +375,12 @@ class DockerClient:
             "error": result.stderr if result.returncode != 0 else "",
         }
 
-    def compose_ps(self, cwd: Optional[Path] = None) -> str:
+    def compose_ps(self, cwd: Path | None = None) -> str:
         """Docker-compose stack state."""
         result = self._run_compose("ps", cwd=cwd, check=False)
         return result.stdout
 
-    def compose_logs(self, cwd: Optional[Path] = None, services: Optional[list[str]] = None,
+    def compose_logs(self, cwd: Path | None = None, services: list[str] | None = None,
                      tail: int = 100) -> str:
         """Logs from a docker-compose stack."""
         args = ["logs", f"--tail={tail}"]
@@ -379,7 +390,7 @@ class DockerClient:
         result = self._run_compose(*args, cwd=cwd, check=False)
         return result.stdout + result.stderr
 
-    def compose_restart(self, cwd: Optional[Path] = None, services: Optional[list[str]] = None) -> dict:
+    def compose_restart(self, cwd: Path | None = None, services: list[str] | None = None) -> dict[str, Any]:
         """Restart docker-compose services."""
         args = ["restart"]
         if services:
@@ -396,8 +407,8 @@ class DockerClient:
     # =========================================================================
 
     def deploy(self, image: str, name: str, tag: str = "latest",
-               build_path: Optional[str] = None, ports: Optional[dict] = None,
-               volumes: Optional[dict] = None, env: Optional[dict] = None) -> dict:
+               build_path: str | None = None, ports: dict[str, str] | None = None,
+               volumes: dict[str, str] | None = None, env: dict[str, str] | None = None) -> dict[str, Any]:
         """
         Full deploy: build (optional) -> stop old -> run new.
         Main method for the DevOps agent.

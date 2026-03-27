@@ -32,6 +32,7 @@ API routes:
 
 import json
 import logging
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from urllib.parse import urlparse, parse_qs
@@ -59,6 +60,7 @@ class APIHandler(BaseHTTPRequestHandler):
     db: Database = None  # type: ignore
     config: BoardConfig = None  # type: ignore
     events: EventProcessor = None  # type: ignore
+    auth_token: str | None = None  # Set from BOARD_SERVER_TOKEN env var
 
     def address_string(self):
         """Override to skip reverse DNS lookup (causes 5-10s delay per request)."""
@@ -68,9 +70,30 @@ class APIHandler(BaseHTTPRequestHandler):
         """Override to use Python logging instead of stderr."""
         logger.debug("%s %s", self.client_address[0], format % args)
 
+    # ----- Auth -----
+
+    def _check_auth(self) -> bool:
+        """Verify Bearer token if BOARD_SERVER_TOKEN is configured.
+
+        Returns True if the request is authorized, False otherwise
+        (and sends a 401 response).
+        """
+        token = self.auth_token
+        if not token:
+            return True  # No token configured — skip auth
+
+        auth_header = self.headers.get("Authorization", "")
+        if auth_header == f"Bearer {token}":
+            return True
+
+        self._json_error(401, "Unauthorized")
+        return False
+
     # ----- Routing -----
 
     def do_GET(self) -> None:
+        if not self._check_auth():
+            return
         path, params = self._parse_url()
 
         if path == "/api/items":
@@ -105,6 +128,8 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_error(404, "Not found")
 
     def do_POST(self) -> None:
+        if not self._check_auth():
+            return
         path, params = self._parse_url()
         body = self._read_body()
 
@@ -120,6 +145,8 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_error(404, "Not found")
 
     def do_PATCH(self) -> None:
+        if not self._check_auth():
+            return
         path, params = self._parse_url()
         body = self._read_body()
 
@@ -130,6 +157,8 @@ class APIHandler(BaseHTTPRequestHandler):
             self._json_error(404, "Not found")
 
     def do_DELETE(self) -> None:
+        if not self._check_auth():
+            return
         path, params = self._parse_url()
 
         if path.startswith("/api/items/"):
@@ -384,7 +413,7 @@ class APIHandler(BaseHTTPRequestHandler):
         """Add CORS headers for browser access."""
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Agent-Id")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Agent-Id, Authorization")
 
 
 def create_server(config: BoardConfig, db: Database) -> ThreadedHTTPServer:
@@ -395,6 +424,7 @@ def create_server(config: BoardConfig, db: Database) -> ThreadedHTTPServer:
     APIHandler.db = db
     APIHandler.config = config
     APIHandler.events = events
+    APIHandler.auth_token = os.environ.get("BOARD_SERVER_TOKEN") or None
 
     server = ThreadedHTTPServer((config.host, config.port), APIHandler)
     return server

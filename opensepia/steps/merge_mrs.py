@@ -42,7 +42,7 @@ class MergeMRsStep:
             if merged or closed:
                 log.step("merge_mrs", f"{merged} merged, {closed} closed")
 
-        except Exception as e:
+        except (ImportError, OSError, ValueError, KeyError) as e:
             logger.warning("Auto-merge failed: %s", e)
             log.warn(f"Auto-merge failed (non-critical): {e}")
 

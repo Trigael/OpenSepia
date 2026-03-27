@@ -107,25 +107,7 @@ COMMANDS = {
     "message": cmd_message,
     "reset": cmd_reset,
     "config": cmd_config,
-    # Legacy: "daemon" subcommand still works
-    "daemon": None,
 }
-
-
-def _handle_legacy_daemon(argv: list[str]) -> None:
-    """Handle 'opensepia daemon <action>' by mapping to top-level commands."""
-    if not argv:
-        print(HELP_TEXT)
-        return
-    action = argv[0]
-    rest = argv[1:]
-    handler = COMMANDS.get(action)
-    if handler:
-        handler(rest)
-    else:
-        print(f"Unknown daemon action: {action}")
-        print(HELP_TEXT)
-        sys.exit(1)
 
 
 def main() -> None:
@@ -136,11 +118,6 @@ def main() -> None:
 
     command = sys.argv[1]
     rest = sys.argv[2:]
-
-    # Legacy: "daemon" subcommand maps actions to top-level commands
-    if command == "daemon":
-        _handle_legacy_daemon(rest)
-        return
 
     handler = COMMANDS.get(command)
     if handler:

@@ -13,7 +13,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from opensepia.board_adapter import BoardAdapter, AgentContext
+from opensepia.cycle_state import _file_lock
+
+from opensepia.board_adapter import BoardAdapter, AgentContext, STORY_BUG_ID_RE
 from opensepia.agents.parser import ParsedFile
 from opensepia.agents.workspace import get_workspace_tree
 from opensepia.config import MAX_STANDUP_CHARS, MAX_INBOX_CHARS
@@ -50,7 +52,7 @@ class MarkdownBoardAdapter(BoardAdapter):
             return path.read_text(encoding="utf-8")
         except FileNotFoundError:
             return ""
-        except Exception as e:
+        except OSError as e:
             return f"[READ ERROR: {e}]"
 
     # ----- Agent context -----
@@ -74,7 +76,7 @@ class MarkdownBoardAdapter(BoardAdapter):
         # Standup (current cycle only — strip nested <details>)
         standup = self._read(self.board_dir / "standup.md")
         details_pos = standup.find("<details>")
-        if details_pos > 0:
+        if details_pos >= 0:
             standup = standup[:details_pos].strip()
         if len(standup) > MAX_STANDUP_CHARS:
             standup = standup[:MAX_STANDUP_CHARS] + "\n_(truncated)_"
@@ -117,7 +119,7 @@ class MarkdownBoardAdapter(BoardAdapter):
                 )
                 if comments_md:
                     return f"\n## Issue Discussions (from {provider.name})\n{comments_md}"
-        except Exception as e:
+        except (ImportError, OSError, ValueError, KeyError) as e:
             logger.debug("Provider comments unavailable: %s", e)
         return ""
 
@@ -157,14 +159,16 @@ class MarkdownBoardAdapter(BoardAdapter):
 
     def archive_inbox(self, agent_id: str) -> None:
         inbox_path = self.board_dir / "inbox" / f"{agent_id}.md"
-        content = self._read(inbox_path)
-        if not content.strip():
-            return
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        archive_dir = self.board_dir / "archive" / agent_id
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        (archive_dir / f"{timestamp}.md").write_text(content, encoding="utf-8")
-        inbox_path.write_text("", encoding="utf-8")
+        lock_path = inbox_path.with_suffix(".lock")
+        with _file_lock(lock_path):
+            content = self._read(inbox_path)
+            if not content.strip():
+                return
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            archive_dir = self.board_dir / "archive" / agent_id
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            (archive_dir / f"{timestamp}.md").write_text(content, encoding="utf-8")
+            inbox_path.write_text("", encoding="utf-8")
 
     # ----- Standup -----
 
@@ -183,13 +187,14 @@ class MarkdownBoardAdapter(BoardAdapter):
 
             # Keep previous cycle as context (strip nested <details>)
             details_pos = old_content.find("<details>")
-            if details_pos > 0:
+            if details_pos >= 0:
                 clean = old_content[:details_pos].strip()
             else:
                 clean = old_content.strip()
 
+            _TRUNCATION_MARKER = "\n_(truncated)_"
             if len(clean) > MAX_INBOX_CHARS:
-                clean = clean[:MAX_INBOX_CHARS] + "\n_(truncated)_"
+                clean = clean[:MAX_INBOX_CHARS - len(_TRUNCATION_MARKER)] + _TRUNCATION_MARKER
 
             prev = f"\n\n<details><summary>Previous cycle</summary>\n\n{clean}\n</details>\n"
         else:
@@ -201,18 +206,22 @@ class MarkdownBoardAdapter(BoardAdapter):
 
     # ----- Board readiness -----
 
-    def ensure_board_ready(self) -> None:
+    _DEFAULT_AGENTS = [
+        "po", "pm", "dev1", "dev2", "devops", "tester",
+        "sec_analyst", "sec_engineer", "sec_pentester",
+    ]
+
+    def ensure_board_ready(self, agents_config: dict | None = None) -> None:
         self.board_dir.mkdir(parents=True, exist_ok=True)
         inbox_dir = self.board_dir / "inbox"
         inbox_dir.mkdir(exist_ok=True)
         (self.board_dir / "archive").mkdir(exist_ok=True)
 
-        # Create inbox files for all known agents
-        # (use a fixed list since we don't have config here)
-        known_agents = [
-            "po", "pm", "dev1", "dev2", "devops", "tester",
-            "sec_analyst", "sec_engineer", "sec_pentester",
-        ]
+        # Derive agent list from config when available, fall back to defaults
+        if agents_config and "agents" in agents_config:
+            known_agents = list(agents_config["agents"].keys())
+        else:
+            known_agents = self._DEFAULT_AGENTS
         for agent in known_agents:
             inbox_file = inbox_dir / f"{agent}.md"
             if not inbox_file.exists():
@@ -250,7 +259,7 @@ class MarkdownBoardAdapter(BoardAdapter):
                 section = stripped[3:].strip()
                 current_status = section if section in active_statuses else None
             elif current_status:
-                refs = re.findall(r"((?:STORY|BUG)-\d+)", line)
+                refs = STORY_BUG_ID_RE.findall(line)
                 ids.extend(refs)
 
         return ids

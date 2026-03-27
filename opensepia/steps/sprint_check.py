@@ -7,6 +7,7 @@ and syncs sprint number from board back to project.yaml.
 
 import re
 import logging
+import subprocess
 import yaml
 from pathlib import Path
 from typing import Any
@@ -60,7 +61,10 @@ class SprintCheckStep:
         adapter = ctx.board_adapter
         standup_file = ctx.board_dir / "standup.md"
 
-        for agent_id in ["po", "pm"]:
+        retro_agents = ctx.agents_config.get("global", {}).get(
+            "retrospective_agents", ["po", "pm"],
+        )
+        for agent_id in retro_agents:
             try:
                 agent_cfg = ctx.agents_config["agents"].get(agent_id)
                 if not agent_cfg:
@@ -95,7 +99,7 @@ class SprintCheckStep:
                     logger.info("%s retrospective completed", agent_id)
                 else:
                     logger.warning("%s retrospective failed: %s", agent_id, result.error)
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, RuntimeError, ValueError, KeyError) as e:
                 logger.warning("%s retrospective error: %s", agent_id, e)
 
     def _advance_sprint(self, ctx: PipelineContext) -> None:
@@ -119,8 +123,8 @@ class SprintCheckStep:
                         board_sprint = int(m.group(1))
                         if board_sprint > old_sprint:
                             new_sprint = board_sprint
-                except Exception:
-                    pass
+                except (OSError, ValueError):
+                    logger.debug("Could not parse sprint number from board file", exc_info=True)
 
         sprint_cfg["current_sprint"] = new_sprint
         sprint_cfg["current_cycle"] = 0

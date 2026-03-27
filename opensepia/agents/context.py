@@ -28,7 +28,7 @@ def build_agent_context_from_adapter(
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     system_prompt = agent["system_prompt"]
-    comm_rules = agents_config["global"].get("communication_rules", "")
+    comm_rules = agents_config.get("global", {}).get("communication_rules", "")
 
     ac = agent_context
 
@@ -63,7 +63,7 @@ Time: {now} | Sprint: {ac.sprint_num} | Cycle: {ac.cycle_num}
 ---
 # INSTRUCTIONS
 
-{agents_config["global"].get("standup_instruction", "")}
+{agents_config.get("global", {}).get("standup_instruction", "")}
 
 {comm_rules}
 

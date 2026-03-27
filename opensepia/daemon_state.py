@@ -45,7 +45,7 @@ class DaemonState:
                 encoding="utf-8",
             )
             os.replace(str(tmp_path), str(state_path))
-        except Exception as e:
+        except OSError as e:
             logger.warning("Failed to write daemon state: %s", e)
             tmp_path.unlink(missing_ok=True)
 

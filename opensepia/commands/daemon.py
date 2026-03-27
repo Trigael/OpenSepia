@@ -1,10 +1,13 @@
 """Daemon commands: start, stop, status, pause, resume."""
 
 import sys
+import logging
 import argparse
 from pathlib import Path
 
 from opensepia import log
+
+logger = logging.getLogger(__name__)
 from opensepia.config import OrchestratorConfig
 from opensepia.errors import ConfigError
 from opensepia.commands.run import check_project_ready, check_workspace_git
@@ -106,8 +109,8 @@ def cmd_status(argv: list[str]) -> None:
     config = None
     try:
         config = OrchestratorConfig.load()
-    except Exception:
-        pass
+    except (ConfigError, OSError, ValueError) as e:
+        logger.debug("Could not load config for status: %s", e)
 
     # --- Daemon ---
     print()
@@ -156,8 +159,8 @@ def cmd_status(argv: list[str]) -> None:
                 todo = summary.get("todo", 0)
                 if todo or done or in_progress:
                     log.info(f"Stories:   {done} done, {in_progress} in progress, {review} review, {todo} todo")
-        except Exception:
-            pass
+        except (ImportError, OSError, ValueError, KeyError) as e:
+            logger.debug("Board summary unavailable: %s", e)
 
         # Last cycle from log files
         if not state.is_process_alive():
@@ -177,8 +180,8 @@ def cmd_status(argv: list[str]) -> None:
                         mode = last.get("mode", "?")
                         icon = "+" if status == "ok" else "!"
                         log.info(f"Last run:  [{icon}] {mode}, {ok_count} ok, {fail_count} failed ({ts})")
-                    except Exception:
-                        pass
+                    except (_json.JSONDecodeError, OSError, KeyError, ValueError) as e:
+                        logger.debug("Could not read last cycle log: %s", e)
 
     # --- Provider ---
     if config:

@@ -11,12 +11,13 @@ from pathlib import Path
 from typing import Any
 
 from opensepia import log
+from opensepia.config import DEFAULT_EXECUTION
 
 logger = logging.getLogger(__name__)
 
-AGENT_TIMEOUT_SECONDS = 900
-DEFAULT_MAX_RETRIES = 1
-DEFAULT_RETRY_DELAY = 30
+AGENT_TIMEOUT_SECONDS = DEFAULT_EXECUTION["timeout"]
+DEFAULT_MAX_RETRIES = DEFAULT_EXECUTION["max_retries"]
+DEFAULT_RETRY_DELAY = DEFAULT_EXECUTION["retry_delay"]
 
 
 @dataclass
@@ -151,7 +152,7 @@ def invoke_agent(
             error=error_msg,
         )
 
-    except Exception as e:
+    except (subprocess.SubprocessError, RuntimeError, OSError) as e:
         error_msg = str(e)
         logger.error("Agent %s error: %s", agent_id, error_msg)
         return AgentResult(

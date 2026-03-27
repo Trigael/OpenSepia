@@ -20,6 +20,8 @@ from pathlib import Path
 from opensepia import log
 from opensepia.pipeline import PipelineContext
 from opensepia.errors import GitSyncError
+from opensepia.integrations.git_client import _redact_credentials, _AskPassHelper
+from opensepia.config import GIT_CMD_TIMEOUT, GIT_PUSH_TIMEOUT, PROVIDER_MR_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -52,17 +54,23 @@ class GitSyncStep:
             logger.debug("Git sync skipped (GIT_REPO_URL not set)")
             return ctx
 
-        auth_url = re.sub(r"https://", f"https://oauth2:{git_token}@", repo_url)
+        # Build a URL with just the username hint (no token).
+        # The actual token is passed via GIT_ASKPASS to avoid leaking
+        # credentials in /proc/pid/cmdline.
+        if git_token and repo_url.startswith("https://"):
+            push_url = re.sub(r"https://", "https://oauth2@", repo_url)
+        else:
+            push_url = repo_url
         branch_name = self._compute_branch_name(ctx)
         timestamp = datetime.now().isoformat()
 
         log.step("git_sync", f"Workspace -> branch {branch_name}")
 
         try:
-            self._commit_and_push(ctx, workspace, auth_url, branch_name, timestamp)
+            self._commit_and_push(ctx, workspace, push_url, git_token, branch_name, timestamp)
         except GitSyncError:
             raise
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             logger.warning("Git sync error: %s", e)
             log.warn(f"Git sync failed (non-critical): {e}")
 
@@ -78,8 +86,8 @@ class GitSyncStep:
                 if active_ids:
                     ids = [sid.lower().replace("-", "") for sid in active_ids[:3]]
                     story_slug = "-".join(ids)
-            except Exception:
-                pass
+            except (OSError, ValueError, KeyError) as e:
+                logger.debug("Failed to get active story IDs from adapter: %s", e)
         else:
             sprint_md_path = ctx.board_dir / "sprint.md"
             if sprint_md_path.exists():
@@ -92,8 +100,8 @@ class GitSyncStep:
                     if stories:
                         ids = [s[0].lower().replace("-", "") for s in stories[:3]]
                         story_slug = "-".join(ids)
-                except Exception:
-                    pass
+                except (OSError, ValueError) as e:
+                    logger.debug("Failed to parse story IDs from sprint.md: %s", e)
 
         if story_slug:
             return f"ai-team/{story_slug}-s{ctx.sprint_num}c{ctx.cycle_num}"
@@ -103,27 +111,41 @@ class GitSyncStep:
         self,
         ctx: PipelineContext,
         workspace: Path,
-        auth_url: str,
+        push_url: str,
+        git_token: str,
         branch_name: str,
         timestamp: str,
     ) -> None:
         """Commit workspace changes, push branch, create MR."""
 
-        def run_git(*args: str, check: bool = True) -> subprocess.CompletedProcess:
+        def run_git(
+            *args: str,
+            check: bool = True,
+            extra_env: dict | None = None,
+            timeout: int = GIT_CMD_TIMEOUT,
+        ) -> subprocess.CompletedProcess:
+            env = {**os.environ}
+            if extra_env:
+                env.update(extra_env)
             result = subprocess.run(
                 ["git"] + list(args),
                 capture_output=True,
                 text=True,
                 cwd=str(workspace),
-                timeout=60,
+                timeout=timeout,
+                env=env,
             )
             if check and result.returncode != 0:
-                sanitized = re.sub(r"oauth2:[^@]*@", "oauth2:***@", result.stderr)
+                sanitized = _redact_credentials(result.stderr)
                 raise GitSyncError(f"git {args[0]} failed: {sanitized}")
             return result
 
-        # Fetch latest main and create feature branch from it
-        run_git("fetch", auth_url, "main", check=False)
+        # Fetch latest main and create feature branch from it.
+        # Use GIT_ASKPASS to pass credentials securely (keeps the token
+        # out of /proc/pid/cmdline).
+        with _AskPassHelper(git_token) as cred_env:
+            run_git("fetch", push_url, "main", check=False, extra_env=cred_env)
+
         run_git("checkout", "main", check=False)
         run_git("reset", "--hard", "FETCH_HEAD", check=False)
         run_git("checkout", "-b", branch_name, check=False)
@@ -171,16 +193,14 @@ class GitSyncStep:
 
         run_git("commit", "-m", commit_msg, f"--author={author}")
 
-        # Push feature branch
-        push_result = subprocess.run(
-            ["git", "push", auth_url, branch_name, "--force"],
-            capture_output=True,
-            text=True,
-            cwd=str(workspace),
-            timeout=120,
-        )
+        # Push feature branch — credentials passed via GIT_ASKPASS
+        with _AskPassHelper(git_token) as cred_env:
+            push_result = run_git(
+                "push", push_url, branch_name, "--force",
+                check=False, extra_env=cred_env, timeout=GIT_PUSH_TIMEOUT,
+            )
         if push_result.returncode != 0:
-            sanitized = re.sub(r"oauth2:[^@]*@", "oauth2:***@", push_result.stderr)
+            sanitized = _redact_credentials(push_result.stderr)
             logger.warning("Git push warning: %s", sanitized)
 
         log.step("git_sync", f"Pushed branch {branch_name}")
@@ -208,12 +228,12 @@ class GitSyncStep:
         try:
             check_url = f"{api_base}/merge_requests?source_branch={urllib.parse.quote(branch_name)}&state=opened"
             req = urllib.request.Request(check_url, headers={"PRIVATE-TOKEN": token})
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=PROVIDER_MR_TIMEOUT) as resp:
                 existing = json.loads(resp.read())
             if existing:
                 log.step_detail("git_sync", f"MR !{existing[0]['iid']} already exists — OK")
                 return
-        except Exception as e:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             log.warn(f"MR: error checking: {e}")
             return
 
@@ -240,11 +260,11 @@ class GitSyncStep:
         )
 
         try:
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=PROVIDER_MR_TIMEOUT) as resp:
                 mr = json.loads(resp.read())
                 log.step("git_sync", f"MR !{mr['iid']} created: {mr['web_url']}")
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             log.error(f"MR error {e.code}: {body[:200]}")
-        except Exception as e:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, KeyError, ValueError) as e:
             log.error(f"MR error: {e}")

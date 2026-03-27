@@ -35,8 +35,11 @@ def test_git_config_auth_repo_url_with_token(clean_env, monkeypatch):
     monkeypatch.setenv("GIT_REPO_URL", "https://gitlab.com/group/project.git")
     monkeypatch.setenv("GIT_TOKEN", "my-secret-token")
     config = GitConfig()
-    expected = "https://oauth2:my-secret-token@gitlab.com/group/project.git"
+    # Token must NOT appear in the URL (security: avoids /proc/pid/cmdline leak).
+    # Only the username hint "oauth2" is embedded.
+    expected = "https://oauth2@gitlab.com/group/project.git"
     assert config.auth_repo_url == expected
+    assert "my-secret-token" not in config.auth_repo_url
 
 
 def test_git_config_auth_repo_url_without_token(clean_env, monkeypatch):

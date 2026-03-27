@@ -12,9 +12,25 @@ from typing import Any
 
 from opensepia.errors import ConfigError
 
+# ---------------------------------------------------------------------------
+# Timeout constants (seconds) — single source of truth for all timeouts
+# ---------------------------------------------------------------------------
+AGENT_TIMEOUT = 900              # Default per-agent Claude invocation
+GIT_CMD_TIMEOUT = 60             # Individual git commands (fetch, commit, etc.)
+GIT_PUSH_TIMEOUT = 120           # git push (may transfer large packs)
+DOCKER_CMD_TIMEOUT = 120         # Standard docker commands (ps, run, stop, etc.)
+DOCKER_COMPOSE_TIMEOUT = 300     # docker compose up/down/restart/logs
+DOCKER_BUILD_TIMEOUT = 600       # docker build (can be very slow)
+DOCKER_TRANSFER_TIMEOUT = 300    # docker pull / push
+DOCKER_LOGIN_TIMEOUT = 30        # docker registry login
+HTTP_REQUEST_TIMEOUT = 10        # Board server HTTP requests
+PROVIDER_API_TIMEOUT = 30        # GitLab / GitHub API calls
+PROVIDER_MR_TIMEOUT = 15         # Merge-request / PR API calls
+CLI_CHECK_TIMEOUT = 5            # Quick CLI availability checks
+
 # Default execution parameters (used when YAML doesn't specify)
 DEFAULT_EXECUTION = {
-    "timeout": 900,
+    "timeout": AGENT_TIMEOUT,
     "max_retries": 1,
     "retry_delay": 30,
     "pause_between_agents": 0,
@@ -23,6 +39,68 @@ DEFAULT_EXECUTION = {
 # Shared constants for context/inbox truncation
 MAX_STANDUP_CHARS = 2000
 MAX_INBOX_CHARS = 1500
+
+
+def _validate_agents_schema(agents: dict) -> None:
+    """Validate agents.yaml structure at load time. Raises ConfigError on problems."""
+    if not isinstance(agents, dict):
+        raise ConfigError("agents.yaml must be a YAML mapping")
+
+    agents_section = agents.get("agents")
+    if not isinstance(agents_section, dict):
+        raise ConfigError("agents.yaml 'agents' must be a mapping of agent_id → definition")
+
+    for aid, defn in agents_section.items():
+        if not isinstance(defn, dict):
+            raise ConfigError(f"agents.yaml: agent '{aid}' must be a mapping")
+        if "name" not in defn:
+            raise ConfigError(f"agents.yaml: agent '{aid}' missing required 'name' field")
+        if "system_prompt" not in defn:
+            raise ConfigError(f"agents.yaml: agent '{aid}' missing required 'system_prompt' field")
+
+    modes = agents.get("modes")
+    if modes is not None:
+        if not isinstance(modes, dict):
+            raise ConfigError("agents.yaml 'modes' must be a mapping")
+        for mode_name, mode_def in modes.items():
+            if not isinstance(mode_def, dict):
+                raise ConfigError(f"agents.yaml: mode '{mode_name}' must be a mapping")
+            if "agents" not in mode_def:
+                raise ConfigError(f"agents.yaml: mode '{mode_name}' missing 'agents' list")
+            if not isinstance(mode_def["agents"], list):
+                raise ConfigError(f"agents.yaml: mode '{mode_name}' 'agents' must be a list")
+
+    execution = agents.get("execution")
+    if execution is not None:
+        if not isinstance(execution, dict):
+            raise ConfigError("agents.yaml 'execution' must be a mapping")
+        for key in ("timeout", "max_retries", "retry_delay"):
+            val = execution.get(key)
+            if val is not None and not isinstance(val, (int, float)):
+                raise ConfigError(f"agents.yaml: execution.{key} must be a number, got {type(val).__name__}")
+
+    pipeline = agents.get("pipeline")
+    if pipeline is not None and not isinstance(pipeline, list):
+        raise ConfigError("agents.yaml 'pipeline' must be a list of step names")
+
+
+def _validate_project_schema(project: dict) -> None:
+    """Validate project.yaml structure at load time. Raises ConfigError on problems."""
+    if not isinstance(project, dict):
+        raise ConfigError("project.yaml must be a YAML mapping")
+
+    sprint = project.get("sprint")
+    if sprint is not None:
+        if not isinstance(sprint, dict):
+            raise ConfigError("project.yaml 'sprint' must be a mapping")
+        for key in ("current_sprint", "current_cycle"):
+            val = sprint.get(key)
+            if val is not None and not isinstance(val, int):
+                raise ConfigError(f"project.yaml: sprint.{key} must be an integer, got {type(val).__name__}")
+
+    limits = project.get("limits")
+    if limits is not None and not isinstance(limits, dict):
+        raise ConfigError("project.yaml 'limits' must be a mapping")
 
 
 @dataclass
@@ -100,6 +178,9 @@ class OrchestratorConfig:
         if not agents or "agents" not in agents:
             raise ConfigError("agents.yaml must contain an 'agents' key")
 
+        # Schema validation for agents.yaml
+        _validate_agents_schema(agents)
+
         # Load project.yaml (product config — inside project_dir)
         project_file = project_dir / "project.yaml"
         if not project_file.exists():
@@ -109,6 +190,9 @@ class OrchestratorConfig:
                 project = yaml.safe_load(f)
         except yaml.YAMLError as e:
             raise ConfigError(f"Invalid project.yaml: {e}") from e
+
+        # Schema validation for project.yaml
+        _validate_project_schema(project)
 
         return cls(
             tool_dir=tool_dir,
@@ -138,6 +222,7 @@ class OrchestratorConfig:
 
     def validate(self) -> list[str]:
         """Validate configuration. Returns list of warnings (empty = all good)."""
+
         warnings = []
         known_agents = set(self.agents.get("agents", {}).keys())
 
@@ -225,26 +310,8 @@ class OrchestratorConfig:
         if mode in known_agents:
             return [mode]
 
-        ids = self._resolve_legacy_mode(mode)
-        if ids is not None:
-            self._validate_agent_ids(ids, mode, known_agents)
-            return ids
-
         valid = sorted(self.get_all_mode_names())
         raise ConfigError(f"Unknown mode '{mode}'. Valid: {', '.join(valid)}")
-
-    def _resolve_legacy_mode(self, mode: str) -> list[str] | None:
-        global_cfg = self.agents.get("global", {})
-        legacy_map = {
-            "all": "execution_order",
-            "dev-team": "dev_team_order", "dev": "dev_team_order",
-            "minimal": "minimal_order", "min": "minimal_order",
-            "security": "security_order", "sec": "security_order",
-        }
-        key = legacy_map.get(mode)
-        if key and key in global_cfg:
-            return global_cfg[key]
-        return None
 
     def _validate_agent_ids(self, ids: list[str], mode: str, known: set[str]) -> None:
         for aid in ids:
@@ -255,6 +322,28 @@ class OrchestratorConfig:
 
     def get_execution_params(self, agent_id: str | None = None) -> dict[str, Any]:
         exec_cfg = self.agents.get("execution", {})
+        params = {
+            "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
+            "max_retries": exec_cfg.get("max_retries", DEFAULT_EXECUTION["max_retries"]),
+            "retry_delay": exec_cfg.get("retry_delay", DEFAULT_EXECUTION["retry_delay"]),
+            "pause_between_agents": exec_cfg.get("pause_between_agents", DEFAULT_EXECUTION["pause_between_agents"]),
+        }
+        if agent_id:
+            overrides = exec_cfg.get("overrides", {})
+            if isinstance(overrides, dict) and agent_id in overrides:
+                agent_overrides = overrides[agent_id]
+                if isinstance(agent_overrides, dict):
+                    params.update(agent_overrides)
+        return params
+
+    @staticmethod
+    def resolve_agent_execution_params(agents_config: dict, agent_id: str | None = None) -> dict[str, Any]:
+        """Resolve execution params from agents_config dict (for use in steps).
+
+        This is the canonical source for extracting execution parameters.
+        Steps should call this instead of duplicating the extraction logic.
+        """
+        exec_cfg = agents_config.get("execution", {})
         params = {
             "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
             "max_retries": exec_cfg.get("max_retries", DEFAULT_EXECUTION["max_retries"]),

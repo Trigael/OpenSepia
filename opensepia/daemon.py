@@ -99,7 +99,7 @@ class OrchestratorDaemon:
         # Redirect stdio
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         sys.stdin.close()
-        log_fd = os.open(str(self.log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+        log_fd = os.open(str(self.log_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         devnull = os.open(os.devnull, os.O_RDONLY)
         os.dup2(devnull, 0)
         os.dup2(log_fd, 1)
@@ -112,7 +112,7 @@ class OrchestratorDaemon:
 
         try:
             self.run_loop()
-        except Exception as e:
+        except (OSError, RuntimeError, OrchestratorError) as e:
             logger.exception("Daemon crashed: %s", e)
             self._state.last_cycle_result = "crash"
             self._state.last_cycle_errors = [str(e)]
@@ -155,19 +155,32 @@ class OrchestratorDaemon:
         return state.pid if state.pid > 0 else proc.pid
 
     def _setup_logging(self) -> None:
-        """Configure logging to daemon.log."""
+        """Configure logging to daemon.log.
+
+        Uses structured JSON format when the OPENSEPIA_LOG_FORMAT env var
+        is set to "json"; otherwise falls back to the default human-readable
+        format.
+        """
+        from opensepia.log import wants_json_logging, setup_json_logging
+
+        level = logging.DEBUG if self.verbose else logging.INFO
+
+        if wants_json_logging():
+            setup_json_logging(str(self.log_path), level=level)
+            return
+
         root = logging.getLogger()
         root.handlers.clear()
 
         handler = logging.FileHandler(str(self.log_path), encoding="utf-8")
-        handler.setLevel(logging.DEBUG if self.verbose else logging.INFO)
+        handler.setLevel(level)
         formatter = logging.Formatter(
             "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
         handler.setFormatter(formatter)
         root.addHandler(handler)
-        root.setLevel(logging.DEBUG if self.verbose else logging.INFO)
+        root.setLevel(level)
 
     def _install_signal_handlers(self) -> None:
         """Install signal handlers (Unix only, safe no-op on Windows)."""
@@ -176,9 +189,9 @@ class OrchestratorDaemon:
             signal.signal(signal.SIGINT, self._handle_stop)
 
     def _handle_stop(self, signum: int, frame) -> None:
-        logger.info("Received signal %d, stopping after current operation...", signum)
+        # Only set flag — no file I/O in signal handler (not async-safe).
+        # The main loop will persist the "stopping" status on its next iteration.
         self._stopping = True
-        self._update_state(status="stopping")
 
     def _check_control_file(self) -> None:
         """Check for file-based control commands (cross-platform)."""
@@ -202,7 +215,7 @@ class OrchestratorDaemon:
                     self._paused = False
                     logger.info("Daemon resumed via control file")
                     self._update_state(status="running", paused_at=None)
-        except Exception as e:
+        except OSError as e:
             logger.debug("Control file read error: %s", e)
 
     def run_loop(self) -> None:
@@ -281,8 +294,8 @@ class OrchestratorDaemon:
                         if sprints_done >= self.max_sprints:
                             logger.info("Reached max sprints (%d). Stopping.", self.max_sprints)
                             break
-                    except Exception:
-                        pass
+                    except (ConfigError, OSError, ValueError) as e:
+                        logger.debug("Sprint limit check failed: %s", e)
 
                 if not self._stopping:
                     next_time = datetime.now() + timedelta(seconds=self.pause)
@@ -298,7 +311,7 @@ class OrchestratorDaemon:
                     self._interruptible_sleep(self.pause)
                     self._state.next_cycle_at = None
 
-        except Exception as e:
+        except (OSError, RuntimeError, OrchestratorError) as e:
             logger.exception("Unexpected error in daemon loop: %s", e)
         finally:
             daemon_lock.release()
@@ -360,7 +373,7 @@ class OrchestratorDaemon:
             errors = [str(e) for e in ctx.errors]
             return ("error" if errors else "ok"), errors
 
-        except Exception as e:
+        except (OSError, RuntimeError, OrchestratorError, ValueError) as e:
             logger.exception("Cycle failed: %s", e)
             return "error", [str(e)]
         finally:

@@ -78,7 +78,7 @@ def post_agent_messages_to_provider(
                 result = client.comment_on_issue(iid, agent_id, comment_body)
                 if "error" not in result:
                     posted += 1
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 logger.warning("Provider: error sending comment on %s: %s", story_id, e)
 
         # Post reviews on MRs too
@@ -90,7 +90,7 @@ def post_agent_messages_to_provider(
                     posted += 1
                 if _is_approval(content):
                     _try_approve_mr(client, mr_iid, agent_id)
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 logger.warning("Provider: error commenting on MR !%d: %s", mr_iid, e)
 
         # Find MRs for reviewed stories
@@ -102,13 +102,15 @@ def post_agent_messages_to_provider(
                     posted += 1
                 if _is_approval(content):
                     _try_approve_mr(client, mr_iid, agent_id)
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 logger.warning("Provider: error posting review on MR !%d: %s", mr_iid, e)
 
     return posted
 
 
-# Cache open MRs per sync cycle
+# Cache open MRs per sync cycle.
+# Safe because the daemon is single-threaded; reset_mr_cache() is called
+# at the start of each cycle via _handle_provider_comments().
 _open_mrs_cache: list | None = None
 
 
@@ -168,7 +170,7 @@ def _try_approve_mr(client: Any, mr_iid: int, agent_id: str) -> None:
         result = client.approve_mr(mr_iid)
         if "error" not in result:
             logger.info("Provider: %s approved MR !%d", agent_id, mr_iid)
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         logger.debug("Provider: approve MR !%d error: %s", mr_iid, e)
 
 
@@ -183,36 +185,6 @@ def post_standup_to_provider(standup_path: Path, client: Any) -> int:
     The standup is available via the board files and cycle logs instead.
     """
     return 0
-
-    # Original implementation kept for reference:
-    if not client or not client.enabled:
-        return 0
-    if not standup_path.exists():
-        return 0
-
-    content = standup_path.read_text(encoding="utf-8")
-    if not content.strip():
-        return 0
-
-    story_refs = extract_story_refs(content)
-    if not story_refs:
-        return 0
-
-    comment_body = f"\U0001f4cb **Standup Summary**\n\n{truncate_for_comment(content, 3000)}"
-
-    posted = 0
-    for story_id in story_refs:
-        try:
-            iid = client.find_issue_by_id(story_id)
-            if not iid:
-                continue
-            result = client.comment_on_issue(iid, "standup", comment_body)
-            if "error" not in result:
-                posted += 1
-        except Exception as e:
-            logger.warning("Standup: error sending to %s: %s", story_id, e)
-
-    return posted
 
 
 # =============================================================================
@@ -261,6 +233,6 @@ def fetch_comments_for_context(
         return ""
     try:
         return client.get_recent_comments_md(story_ids, max_chars=max_chars)
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         logger.warning("Provider: error fetching comments: %s", e)
         return ""

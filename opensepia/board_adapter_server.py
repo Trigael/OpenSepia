@@ -6,6 +6,7 @@ Translates between the agent's markdown-centric world and
 the board server's structured item/inbox model.
 """
 
+import os
 import re
 import json
 import logging
@@ -13,11 +14,12 @@ import urllib.request
 import urllib.parse
 import urllib.error
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from opensepia.board_adapter import BoardAdapter, AgentContext
 from opensepia.agents.parser import ParsedFile
 from opensepia.agents.workspace import get_workspace_tree
+from opensepia.config import HTTP_REQUEST_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -50,19 +52,23 @@ class BoardServerAdapter(BoardAdapter):
             url += "?" + urllib.parse.urlencode(params)
 
         body = json.dumps(data).encode("utf-8") if data else None
+        headers = {"Content-Type": "application/json", "X-Agent-Id": agent}
+        token = os.environ.get("BOARD_SERVER_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         req = urllib.request.Request(
             url, data=body, method=method,
-            headers={"Content-Type": "application/json", "X-Agent-Id": agent},
+            headers=headers,
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=HTTP_REQUEST_TIMEOUT) as resp:
                 text = resp.read().decode("utf-8")
                 return json.loads(text) if text else {}
         except urllib.error.HTTPError as e:
             error_code = e.code
             logger.debug("Board server API %s %s: HTTP %d", method, path, error_code)
             return {"error": error_code, "message": str(e)}
-        except Exception as e:
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as e:
             logger.warning("Board server API %s %s: %s", method, path, e)
             return {"error": str(e)}
 
@@ -213,7 +219,9 @@ class BoardServerAdapter(BoardAdapter):
             elif pf.path.startswith("workspace/") or pf.path.startswith("src/"):
                 # Write to local filesystem
                 full_path = (self.project_dir / pf.path).resolve()
-                if not str(full_path).startswith(str(resolved_base)):
+                try:
+                    full_path.relative_to(resolved_base)
+                except ValueError:
                     logger.warning("SECURITY: %s path traversal blocked: %s", agent_id, pf.path)
                     continue
                 full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -228,16 +236,20 @@ class BoardServerAdapter(BoardAdapter):
             elif pf.path.startswith("board/"):
                 # Other board files (architecture.md, decisions.md, project.md)
                 full_path = (self.project_dir / pf.path).resolve()
-                if str(full_path).startswith(str(resolved_base)):
-                    full_path.parent.mkdir(parents=True, exist_ok=True)
-                    if pf.action == "append":
-                        existing = ""
-                        if full_path.exists():
-                            existing = full_path.read_text(encoding="utf-8")
-                        full_path.write_text(existing + "\n" + pf.content, encoding="utf-8")
-                    else:
-                        full_path.write_text(pf.content, encoding="utf-8")
-                    written += 1
+                try:
+                    full_path.relative_to(resolved_base)
+                except ValueError:
+                    logger.warning("SECURITY: %s path traversal blocked: %s", agent_id, pf.path)
+                    continue
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                if pf.action == "append":
+                    existing = ""
+                    if full_path.exists():
+                        existing = full_path.read_text(encoding="utf-8")
+                    full_path.write_text(existing + "\n" + pf.content, encoding="utf-8")
+                else:
+                    full_path.write_text(pf.content, encoding="utf-8")
+                written += 1
 
         return written
 
@@ -367,7 +379,7 @@ class BoardServerAdapter(BoardAdapter):
 
     # ----- Board readiness -----
 
-    def ensure_board_ready(self) -> None:
+    def ensure_board_ready(self, agents_config: dict | None = None) -> None:
         # Board server is always ready — just verify it's reachable
         result = self._api("GET", "/schema")
         if isinstance(result, dict) and "error" in result:

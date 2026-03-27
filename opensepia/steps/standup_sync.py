@@ -45,7 +45,7 @@ class StandupSyncStep:
             else:
                 log.step_detail("standup_sync", "Provider not configured, skipping")
 
-        except Exception as e:
+        except (ImportError, OSError, ValueError, KeyError) as e:
             logger.warning("Standup provider sync failed: %s", e)
             log.warn(f"Standup sync failed (non-critical): {e}")
 

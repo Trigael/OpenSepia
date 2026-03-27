@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 
 from opensepia import log
-from opensepia.config import OrchestratorConfig
+from opensepia.config import OrchestratorConfig, CLI_CHECK_TIMEOUT
 from opensepia.errors import OrchestratorError, ConfigError, LockError
 from opensepia.lockfile import ProcessLock
 from opensepia.pipeline import Pipeline, PipelineContext
@@ -147,10 +147,10 @@ def check_workspace_git(config: OrchestratorConfig) -> dict:
         result = subprocess.run(
             ["git", "remote", "-v"],
             capture_output=True, text=True,
-            cwd=str(workspace), timeout=5,
+            cwd=str(workspace), timeout=CLI_CHECK_TIMEOUT,
         )
         has_remote = bool(result.stdout.strip())
-    except Exception:
+    except (subprocess.SubprocessError, OSError):
         has_remote = False
     repo_url = os.environ.get("GIT_REPO_URL", "")
     return {
@@ -191,10 +191,13 @@ def cmd_run(argv: list[str]) -> None:
         sys.exit(1)
 
     issues = check_project_ready(config)
-    if issues:
+    if issues and not args.dry_run:
         for issue in issues:
             log.error(issue)
         sys.exit(1)
+    elif issues and args.dry_run:
+        for issue in issues:
+            log.warn(issue)
 
     config_warnings = config.validate()
     for w in config_warnings:

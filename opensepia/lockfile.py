@@ -6,6 +6,8 @@ concurrently. Uses PID-based lockfiles with stale lock detection.
 Cross-platform: uses tempfile.gettempdir() instead of hardcoded /tmp/.
 """
 
+from __future__ import annotations
+
 import os
 import tempfile
 import logging
@@ -54,28 +56,52 @@ class ProcessLock:
 
     def __init__(self, mode: str, lock_dir: str | None = None):
         if lock_dir is None:
-            lock_dir = tempfile.gettempdir()
+            lock_dir = str(Path.home() / ".opensepia" / "locks")
         self.mode = mode
         self.lock_path = Path(lock_dir) / f"ai-team-cli-{mode}.lock"
         self._acquired = False
 
     def acquire(self) -> None:
-        """Acquire the lock. Raises LockError if another instance is running."""
-        if self.lock_path.exists():
-            try:
-                pid = int(self.lock_path.read_text().strip())
-                if _is_pid_alive(pid):
-                    raise LockError(
-                        f"Previous {self.mode} cycle is running (PID: {pid})"
-                    )
-            except (ValueError, OSError):
-                pass
-            # Stale lock — remove it
-            logger.info("Removing stale lockfile for mode %s", self.mode)
-            self.lock_path.unlink(missing_ok=True)
+        """Acquire the lock. Raises LockError if another instance is running.
 
-        self.lock_path.write_text(str(os.getpid()))
-        self._acquired = True
+        Uses atomic O_CREAT|O_EXCL to avoid TOCTOU races between concurrent
+        processes checking and creating the lock file.
+        """
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        pid_bytes = str(os.getpid()).encode()
+
+        try:
+            fd = os.open(str(self.lock_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            os.write(fd, pid_bytes)
+            os.close(fd)
+            self._acquired = True
+            return
+        except FileExistsError:
+            pass
+
+        # Lock file exists — check if the owning process is still alive
+        try:
+            pid = int(self.lock_path.read_text().strip())
+            if _is_pid_alive(pid):
+                raise LockError(
+                    f"Previous {self.mode} cycle is running (PID: {pid})"
+                )
+        except (ValueError, OSError):
+            pass
+
+        # Stale lock — remove and retry atomically
+        logger.info("Removing stale lockfile for mode %s", self.mode)
+        self.lock_path.unlink(missing_ok=True)
+
+        try:
+            fd = os.open(str(self.lock_path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+            os.write(fd, pid_bytes)
+            os.close(fd)
+            self._acquired = True
+        except FileExistsError:
+            raise LockError(
+                f"Another {self.mode} instance acquired the lock while removing stale lock"
+            )
 
     def release(self) -> None:
         """Release the lock."""
@@ -87,5 +113,5 @@ class ProcessLock:
         self.acquire()
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: object) -> None:
         self.release()

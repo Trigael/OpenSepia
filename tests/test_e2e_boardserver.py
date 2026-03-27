@@ -280,10 +280,11 @@ class TestE2EBoardServer:
             pipeline = build_pipeline(ctx.agents_config, agent_ids=ctx.agent_ids)
             pipeline.run(ctx)
 
-        # Sprint.md and backlog.md should NOT exist (data lives on board server)
-        # Note: the adapter may write to board/ for standup/inbox as local cache,
-        # but sprint.md and backlog.md should not be created by the server adapter
+        # The pipeline steps themselves should not create sprint.md or backlog.md
+        # when using the board server adapter. However, agent output may write
+        # board/sprint.md via apply_agent_output (which writes to local filesystem).
+        # The key assertion: no *empty* board files were created by pipeline steps.
         board_dir = ctx.board_dir
-        # These might exist from agent output being written to local filesystem
-        # via apply_agent_output, which is expected for now
-        # The key assertion is that the PIPELINE STEPS don't create them
+        for fname in ("backlog.md",):
+            fpath = board_dir / fname
+            assert not fpath.exists(), f"{fname} should not be created by pipeline steps with board server adapter"

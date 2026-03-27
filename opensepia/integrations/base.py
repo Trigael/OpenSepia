@@ -4,9 +4,11 @@ AI Dev Team — Board Provider ABC
 Abstract interface for GitLab, GitHub, Gitea, and other providers.
 """
 
+from __future__ import annotations
+
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -82,56 +84,56 @@ class BoardProvider(ABC):
 
     @abstractmethod
     def create_issue(self, title: str, description: str,
-                     labels: list = None, **kwargs) -> dict:
+                     labels: list[str] | None = None, **kwargs: Any) -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def close_issue(self, issue_id: Any) -> dict:
+    def close_issue(self, issue_id: Any) -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def reopen_issue(self, issue_id: Any) -> dict:
+    def reopen_issue(self, issue_id: Any) -> dict[str, Any]:
         """Reopen a previously closed issue."""
         ...
 
     @abstractmethod
-    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict:
+    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict[str, Any]:
         """Replace all labels on an issue."""
         ...
 
     @abstractmethod
     def update_issue_status(self, issue_id: Any, from_status: str,
-                            to_status: str) -> dict:
+                            to_status: str) -> dict[str, Any]:
         ...
 
     @abstractmethod
     def comment_on_issue(self, issue_id: Any, agent_id: str,
-                         message: str) -> dict:
+                         message: str) -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def find_issue_by_id(self, story_id: str) -> Optional[int]:
+    def find_issue_by_id(self, story_id: str) -> int | None:
         ...
 
     @abstractmethod
-    def list_issues(self, labels: str = None,
-                    state: str = "opened") -> list:
+    def list_issues(self, labels: str | None = None,
+                    state: str = "opened") -> list[dict[str, Any]]:
         ...
 
     @abstractmethod
     def search_issues(self, query: str,
-                      state: str = "opened") -> list:
+                      state: str = "opened") -> list[dict[str, Any]]:
         ...
 
     @abstractmethod
     def get_issue_comments(self, issue_id: Any,
-                           limit: int = 10) -> list:
+                           limit: int = 10) -> list[dict[str, Any]]:
         ...
 
     # ----- Board -----
 
     @abstractmethod
-    def get_board_state(self) -> dict:
+    def get_board_state(self) -> dict[str, list[dict[str, Any]]]:
         ...
 
     @abstractmethod
@@ -142,32 +144,32 @@ class BoardProvider(ABC):
 
     @abstractmethod
     def create_mr(self, source_branch: str, target_branch: str,
-                  title: str, description: str = "") -> dict:
+                  title: str, description: str = "") -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def list_mrs(self, state: str = "opened") -> list:
+    def list_mrs(self, state: str = "opened") -> list[dict[str, Any]]:
         ...
 
     @abstractmethod
-    def get_mr(self, mr_id: Any) -> dict:
+    def get_mr(self, mr_id: Any) -> dict[str, Any]:
         ...
 
     @abstractmethod
     def comment_on_mr(self, mr_id: Any, body: str,
-                      agent_id: str = "") -> dict:
+                      agent_id: str = "") -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def approve_mr(self, mr_id: Any) -> dict:
+    def approve_mr(self, mr_id: Any) -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def merge_mr(self, mr_id: Any, squash: bool = False) -> dict:
+    def merge_mr(self, mr_id: Any, squash: bool = False) -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def close_mr(self, mr_id: Any) -> dict:
+    def close_mr(self, mr_id: Any) -> dict[str, Any]:
         ...
 
     @abstractmethod
@@ -175,11 +177,11 @@ class BoardProvider(ABC):
         ...
 
     @abstractmethod
-    def get_mr_changes(self, mr_id: Any) -> dict:
+    def get_mr_changes(self, mr_id: Any) -> dict[str, Any]:
         ...
 
     @abstractmethod
-    def get_mr_approvals(self, mr_id: Any) -> dict:
+    def get_mr_approvals(self, mr_id: Any) -> dict[str, Any]:
         """Get MR/PR approval status. Must return dict with 'approved': bool."""
         ...
 
@@ -196,7 +198,7 @@ class BoardProvider(ABC):
     # ----- High-level (default implementations) -----
 
     def create_story(self, story_id: str, title: str, description: str,
-                     priority: str = "medium", assigned_to: Optional[str] = None) -> dict:
+                     priority: str = "medium", assigned_to: str | None = None) -> dict[str, Any]:
         """Create a user story as an issue."""
         labels = [
             BOARD_LABELS["todo"],
@@ -209,7 +211,7 @@ class BoardProvider(ABC):
         return self.create_issue(f"[{story_id}] {title}", desc, labels=labels)
 
     def create_bug(self, bug_id: str, title: str, description: str,
-                   severity: str = "medium", related_issue: Optional[Any] = None) -> dict:
+                   severity: str = "medium", related_issue: Any | None = None) -> dict[str, Any]:
         """Create a bug report as an issue."""
         labels = [
             BOARD_LABELS["todo"],

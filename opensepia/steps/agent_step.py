@@ -17,12 +17,14 @@ from pathlib import Path
 from typing import Any
 
 from opensepia import log
+from opensepia.config import GIT_CMD_TIMEOUT
+from opensepia.board_adapter import STORY_BUG_ID_RE
 from opensepia.pipeline import PipelineContext
 from opensepia.agents.context import build_agent_context_from_adapter
 from opensepia.agents.invoker import invoke_agent
 from opensepia.agents.parser import parse_files_section
 from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
-from opensepia.config import DEFAULT_EXECUTION
+from opensepia.config import OrchestratorConfig
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,9 @@ class AgentStep:
         agent_cfg = ctx.agents_config["agents"].get(agent_id)
 
         if not agent_cfg:
-            log.warn(f"Agent '{agent_id}' not found in config")
+            error_msg = f"Agent '{agent_id}' not found in agents config — skipped"
+            log.warn(error_msg)
+            ctx.errors.append(error_msg)
             return ctx
 
         agent_name = agent_cfg["name"]
@@ -77,18 +81,9 @@ class AgentStep:
 
         log.progress(agent_name, len(ctx.agent_results) + 1, len(ctx.agent_ids), agent_color)
 
-        exec_cfg = ctx.agents_config.get("execution", {})
-        params = {
-            "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
-            "max_retries": exec_cfg.get("max_retries", DEFAULT_EXECUTION["max_retries"]),
-            "retry_delay": exec_cfg.get("retry_delay", DEFAULT_EXECUTION["retry_delay"]),
-        }
-        overrides = exec_cfg.get("overrides", {})
-        if isinstance(overrides, dict) and agent_id in overrides:
-            agent_ov = overrides[agent_id]
-            if isinstance(agent_ov, dict):
-                params.update(agent_ov)
-
+        params = OrchestratorConfig.resolve_agent_execution_params(
+            ctx.agents_config, agent_id,
+        )
         max_retries = params["max_retries"]
         retry_delay = params["retry_delay"]
         timeout = params["timeout"]
@@ -160,7 +155,7 @@ class AgentStep:
                     ctx.current_agent_result = result_dict
                     return ctx
 
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, RuntimeError, ValueError, KeyError) as e:
                 if attempt < max_retries:
                     log.warn(f"Error: {e} — retrying in {retry_delay}s...")
                     time.sleep(retry_delay)
@@ -193,7 +188,7 @@ def _git(workspace: Path, *args: str, check: bool = False) -> subprocess.Complet
     return subprocess.run(
         ["git"] + list(args),
         capture_output=True, text=True,
-        cwd=str(workspace), timeout=30,
+        cwd=str(workspace), timeout=GIT_CMD_TIMEOUT,
     )
 
 
@@ -206,7 +201,7 @@ def _extract_story_id(result: dict | None) -> str | None:
     if not result:
         return None
     response = result.get("response", "")
-    refs = re.findall(r'((?:STORY|BUG)-\d+)', response)
+    refs = STORY_BUG_ID_RE.findall(response)
     return refs[0] if refs else None
 
 
@@ -264,7 +259,9 @@ class AgentCommitStep:
 
                 # Switch to story branch BEFORE staging (avoids conflicts with staged files)
                 existing = _git(workspace, "branch", "--list", branch)
-                if branch in existing.stdout:
+                # Exact match: git branch --list output pads with spaces, e.g. "  story/story-001\n"
+                existing_branches = [b.strip() for b in existing.stdout.splitlines()]
+                if branch in existing_branches:
                     result = _git(workspace, "checkout", branch)
                     if result.returncode != 0:
                         logger.warning("Checkout %s failed: %s — merging master into branch",
@@ -277,7 +274,9 @@ class AgentCommitStep:
                         _git(workspace, "merge", "master", "--no-edit")
                         pop = _git(workspace, "stash", "pop")
                         if pop.returncode != 0:
-                            # Stash pop conflict — accept working tree version
+                            # Stash pop conflict — accept agent's working tree version
+                            logger.warning("Stash pop conflict on %s — resolving with --theirs "
+                                           "(accepting agent changes): %s", branch, pop.stderr.strip())
                             _git(workspace, "checkout", "--theirs", ".")
                             _git(workspace, "stash", "drop")
                 else:
@@ -300,7 +299,7 @@ class AgentCommitStep:
             else:
                 log.step_detail(self._name, f"Committed to master as {author_name}")
 
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError) as e:
             log.warn(f"Git commit for {self.agent_id} failed: {e}")
             # Ensure we're back on master
             _git(workspace, "checkout", "master")
@@ -353,13 +352,15 @@ class AgentSyncStep:
         # Check which stories are DONE (from board adapter)
         try:
             summary = ctx.board_adapter.get_board_summary()
-        except Exception:
+        except (OSError, ValueError, KeyError):
+            logger.debug("Could not fetch board summary for branch cleanup", exc_info=True)
             return
 
         # Get sprint text to find DONE stories
         try:
             sprint_text = ctx.board_adapter.get_sprint_text()
-        except Exception:
+        except (OSError, ValueError, KeyError):
+            logger.debug("Could not fetch sprint text for branch cleanup", exc_info=True)
             return
 
         done_ids = set()

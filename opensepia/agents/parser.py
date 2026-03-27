@@ -148,8 +148,9 @@ def parse_output_yaml(response: str) -> list[ParsedFile]:
                 for f in data["files_to_write"]
                 if f.get("path") and f.get("content")
             ]
-    except Exception:
-        pass
+    except (yaml.YAMLError, ValueError, KeyError, TypeError) as e:
+        import logging
+        logging.getLogger(__name__).debug("Failed to parse OUTPUT YAML: %s", e)
 
     return []
 

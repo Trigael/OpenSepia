@@ -52,7 +52,7 @@ def detect_provider() -> Optional[BoardProvider]:
         from opensepia.config import OrchestratorConfig
         config = OrchestratorConfig.load()
         board_dir = config.board_dir
-    except Exception:
+    except (ImportError, OSError, ValueError):
         board_dir = None
     provider = MarkdownProvider(board_dir=board_dir)
     if provider.enabled:

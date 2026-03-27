@@ -106,7 +106,7 @@ class EventAction:
 @dataclass
 class BoardConfig:
     """Full board server configuration."""
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8080
     db_path: str = "board.db"
     item_types: dict[str, ItemTypeDef] = field(default_factory=dict)

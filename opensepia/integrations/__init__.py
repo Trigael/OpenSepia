@@ -8,6 +8,7 @@ files_to_write, which are invoked after files are written.
 """
 
 import logging
+import subprocess
 from pathlib import Path
 from typing import Optional
 
@@ -53,7 +54,7 @@ class IntegrationDispatcher:
         if self.board:
             try:
                 parts.append(self.board.get_board_summary_md())
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 logger.warning("Board summary failed: %s", e, exc_info=True)
                 parts.append(f"(Board unavailable: {e})")
 
@@ -61,7 +62,7 @@ class IntegrationDispatcher:
         if self.board and agent_id in ("dev1", "dev2", "tester", "sec_analyst", "sec_engineer"):
             try:
                 parts.append(self.board.get_open_mrs_md())
-            except Exception as e:
+            except (OSError, ValueError, KeyError) as e:
                 logger.warning("Open MRs/PRs fetch failed: %s", e, exc_info=True)
                 parts.append(f"(MR/PR unavailable: {e})")
 
@@ -69,7 +70,7 @@ class IntegrationDispatcher:
         if self.git.enabled and agent_id in ("dev1", "dev2", "devops", "tester", "sec_analyst", "sec_engineer", "sec_pentester"):
             try:
                 parts.append(self.git.get_git_context_md())
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 logger.warning("Git context failed: %s", e, exc_info=True)
                 parts.append(f"(Git unavailable: {e})")
 
@@ -77,7 +78,7 @@ class IntegrationDispatcher:
         if agent_id == "devops":
             try:
                 parts.append(self.docker.get_docker_context_md())
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError) as e:
                 logger.warning("Docker context failed: %s", e, exc_info=True)
                 parts.append(f"(Docker unavailable: {e})")
 
@@ -115,7 +116,7 @@ class IntegrationDispatcher:
                     "success": "error" not in result,
                     "result": result,
                 })
-            except Exception as e:
+            except (subprocess.SubprocessError, OSError, ValueError, KeyError, RuntimeError) as e:
                 logger.exception(f"Action {action_type} failed: {e}")
                 results.append({
                     "action": action_type,

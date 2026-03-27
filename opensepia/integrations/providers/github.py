@@ -6,18 +6,21 @@ Issues = stories/bugs, Pull Requests = merge requests.
 Labels for board state (same conventions as GitLab).
 """
 
-import os
+from __future__ import annotations
+
 import json
 import logging
-import urllib.request
+import os
+import time
 import urllib.parse
-import urllib.error
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
+from opensepia.config import PROVIDER_API_TIMEOUT
 from ..base import (
     BoardProvider, BOARD_LABELS, PRIORITY_LABELS, ROLE_LABELS,
 )
+from .http_mixin import HTTPMixin, build_url
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # =============================================================================
 class GitHubConfig:
-    def __init__(self):
+    def __init__(self) -> None:
         self.token = os.getenv("GITHUB_TOKEN", "")
         self.owner = os.getenv("GITHUB_OWNER", "")
         self.repo = os.getenv("GITHUB_REPO", "")
@@ -44,41 +47,30 @@ class GitHubConfig:
 # =============================================================================
 # HTTP helper
 # =============================================================================
+def _github_headers(config: GitHubConfig) -> dict[str, str]:
+    """Build GitHub-specific request headers."""
+    return {
+        "Authorization": f"Bearer {config.token}",
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
 def _api_call(config: GitHubConfig, method: str, endpoint: str,
-              data: Optional[dict] = None, params: Optional[dict] = None) -> Union[dict, list]:
-    """Perform an API call to GitHub."""
-    url = f"{config.api_base}{endpoint}"
-
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
-
-    body = json.dumps(data).encode("utf-8") if data else None
-
-    req = urllib.request.Request(
+              data: dict[str, Any] | None = None, params: dict[str, Any] | None = None,
+              _max_retries: int = 4) -> Any:
+    """Perform an API call to GitHub with retry on rate limit (403/429)."""
+    url = build_url(config.api_base, endpoint, params)
+    return HTTPMixin._http_request_with_retry(
         url,
-        data=body,
         method=method,
-        headers={
-            "Authorization": f"Bearer {config.token}",
-            "Accept": "application/vnd.github+json",
-            "Content-Type": "application/json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        }
+        headers=_github_headers(config),
+        data=data,
+        timeout=PROVIDER_API_TIMEOUT,
+        max_retries=_max_retries,
+        retry_on=(403, 429),
     )
-
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            response_body = resp.read().decode("utf-8")
-            if response_body:
-                return json.loads(response_body)
-            return {"status": "ok"}
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode("utf-8", errors="replace")
-        logger.error(f"GitHub API {method} {endpoint}: {e.code} — {error_body}")
-        return {"error": e.code, "message": error_body}
-    except Exception as e:
-        logger.error(f"GitHub API {method} {endpoint}: {e}")
-        return {"error": str(e)}
 
 
 # =============================================================================
@@ -137,9 +129,12 @@ def ensure_labels(config: GitHubConfig) -> None:
 class GitHubProvider(BoardProvider):
     """GitHub implementation of BoardProvider."""
 
-    def __init__(self, config: Optional[GitHubConfig] = None) -> None:
+    CACHE_TTL_SECONDS = 300  # 5 minutes
+
+    def __init__(self, config: GitHubConfig | None = None) -> None:
         self.config = config or GitHubConfig()
         self._issue_cache: dict[str, int] = {}
+        self._cache_timestamps: dict[str, float] = {}
 
     @property
     def name(self) -> str:
@@ -165,11 +160,12 @@ class GitHubProvider(BoardProvider):
         number is suspected stale (e.g. issue was deleted).
         """
         self._issue_cache = {}
+        self._cache_timestamps = {}
 
     # ----- Issues -----
 
     def create_issue(self, title: str, description: str,
-                     labels: list = None, **kwargs) -> dict:
+                     labels: list[str] | None = None, **kwargs: Any) -> dict[str, Any]:
         data = {"title": title, "body": description}
         if labels:
             data["labels"] = labels  # GitHub accepts a list directly
@@ -181,20 +177,20 @@ class GitHubProvider(BoardProvider):
             logger.info(f"Issue #{result.get('number')} created: {title}")
         return result
 
-    def close_issue(self, issue_id: Any) -> dict:
+    def close_issue(self, issue_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "PATCH", f"/issues/{issue_id}",
                          data={"state": "closed"})
 
-    def reopen_issue(self, issue_id: Any) -> dict:
+    def reopen_issue(self, issue_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "PATCH", f"/issues/{issue_id}",
                          data={"state": "open"})
 
-    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict:
+    def update_issue_labels(self, issue_id: Any, labels: list[str]) -> dict[str, Any]:
         return _api_call(self.config, "PATCH", f"/issues/{issue_id}",
                          data={"labels": labels})
 
     def update_issue_status(self, issue_id: Any, from_status: str,
-                            to_status: str) -> dict:
+                            to_status: str) -> dict[str, Any]:
         # Load current labels
         issue = _api_call(self.config, "GET", f"/issues/{issue_id}")
         if "error" in issue:
@@ -219,16 +215,21 @@ class GitHubProvider(BoardProvider):
         return result
 
     def comment_on_issue(self, issue_id: Any, agent_id: str,
-                         message: str) -> dict:
+                         message: str) -> dict[str, Any]:
         body = self._format_agent_comment(agent_id, message)
         return _api_call(self.config, "POST",
                          f"/issues/{issue_id}/comments",
                          data={"body": body})
 
-    def find_issue_by_id(self, story_id: str) -> Optional[int]:
-        # 1) In-memory cache
+    def find_issue_by_id(self, story_id: str) -> int | None:
+        # 1) In-memory cache (with TTL)
         if story_id in self._issue_cache:
-            return self._issue_cache[story_id]
+            cached_at = self._cache_timestamps.get(story_id, 0)
+            if time.time() - cached_at < self.CACHE_TTL_SECONDS:
+                return self._issue_cache[story_id]
+            # Expired — remove stale entry
+            del self._issue_cache[story_id]
+            self._cache_timestamps.pop(story_id, None)
 
         # 2) File cache
         import json as _json
@@ -239,6 +240,7 @@ class GitHubProvider(BoardProvider):
             if story_id in file_cache:
                 num = file_cache[story_id]
                 self._issue_cache[story_id] = num
+                self._cache_timestamps[story_id] = time.time()
                 return num
         except (FileNotFoundError, _json.JSONDecodeError, KeyError):
             pass
@@ -250,12 +252,13 @@ class GitHubProvider(BoardProvider):
             if f"[{story_id}]" in title:
                 num = issue["number"]
                 self._issue_cache[story_id] = num
+                self._cache_timestamps[story_id] = time.time()
                 return num
 
         return None
 
-    def list_issues(self, labels: str = None,
-                    state: str = "opened") -> list:
+    def list_issues(self, labels: str | None = None,
+                    state: str = "opened") -> list[dict[str, Any]]:
         # GitHub uses "open"/"closed" instead of "opened"/"closed"
         gh_state = "open" if state == "opened" else state
         params = {"state": gh_state, "per_page": 50}
@@ -274,38 +277,33 @@ class GitHubProvider(BoardProvider):
         return issues
 
     def search_issues(self, query: str,
-                      state: str = "opened") -> list:
+                      state: str = "opened") -> list[dict[str, Any]]:
         # GitHub Search API
         gh_state = "open" if state == "opened" else "closed"
         safe_query = urllib.parse.quote(query, safe="")
         q = f"{safe_query} repo:{self.config.owner}/{self.config.repo} is:issue state:{gh_state}"
-        url = f"{self.config.api_url}/search/issues"
-        params = {"q": q, "per_page": 20}
-
-        full_url = url + "?" + urllib.parse.urlencode(params)
-        req = urllib.request.Request(
-            full_url,
-            method="GET",
-            headers={
-                "Authorization": f"Bearer {self.config.token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            }
+        url = build_url(
+            f"{self.config.api_url}/search/issues", "",
+            {"q": q, "per_page": 20},
         )
 
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                items = data.get("items", [])
-                for i in items:
-                    i["iid"] = i.get("number")
-                return items
-        except Exception as e:
-            logger.error(f"GitHub Search API: {e}")
+        result = HTTPMixin._http_request(
+            url,
+            method="GET",
+            headers=_github_headers(self.config),
+            timeout=PROVIDER_API_TIMEOUT,
+        )
+
+        if isinstance(result, dict) and "error" in result:
             return []
 
+        items = result.get("items", []) if isinstance(result, dict) else []
+        for i in items:
+            i["iid"] = i.get("number")
+        return items
+
     def get_issue_comments(self, issue_id: Any,
-                           limit: int = 10) -> list:
+                           limit: int = 10) -> list[dict[str, Any]]:
         params = {"per_page": limit}
         result = _api_call(self.config, "GET",
                            f"/issues/{issue_id}/comments", params=params)
@@ -328,7 +326,7 @@ class GitHubProvider(BoardProvider):
 
     # ----- Board -----
 
-    def get_board_state(self) -> dict:
+    def get_board_state(self) -> dict[str, list[dict[str, Any]]]:
         state = {}
         for status_key, label_name in BOARD_LABELS.items():
             issues = self.list_issues(labels=label_name)
@@ -377,7 +375,7 @@ class GitHubProvider(BoardProvider):
     # ----- PR (as MR) -----
 
     def create_mr(self, source_branch: str, target_branch: str = "main",
-                  title: str = "", description: str = "") -> dict:
+                  title: str = "", description: str = "") -> dict[str, Any]:
         data = {
             "head": source_branch,
             "base": target_branch,
@@ -389,7 +387,7 @@ class GitHubProvider(BoardProvider):
             result["iid"] = result.get("number")
         return result
 
-    def list_mrs(self, state: str = "opened") -> list:
+    def list_mrs(self, state: str = "opened") -> list[dict[str, Any]]:
         gh_state = "open" if state == "opened" else state
         params = {"state": gh_state, "per_page": 50}
         result = _api_call(self.config, "GET", "/pulls", params=params)
@@ -403,39 +401,39 @@ class GitHubProvider(BoardProvider):
                 pr["author"] = {"name": pr["user"].get("login", "?")}
         return result
 
-    def get_mr(self, mr_id: Any) -> dict:
+    def get_mr(self, mr_id: Any) -> dict[str, Any]:
         result = _api_call(self.config, "GET", f"/pulls/{mr_id}")
         if "error" not in result:
             result["iid"] = result.get("number")
         return result
 
     def comment_on_mr(self, mr_id: Any, body: str,
-                      agent_id: str = "") -> dict:
+                      agent_id: str = "") -> dict[str, Any]:
         prefix = f"**🤖 {agent_id.upper()}**: " if agent_id else ""
         # GitHub PR comments go through the issues endpoint
         return _api_call(self.config, "POST",
                          f"/issues/{mr_id}/comments",
                          data={"body": prefix + body})
 
-    def approve_mr(self, mr_id: Any) -> dict:
+    def approve_mr(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "POST",
                          f"/pulls/{mr_id}/reviews",
                          data={"event": "APPROVE"})
 
-    def merge_mr(self, mr_id: Any, squash: bool = False) -> dict:
+    def merge_mr(self, mr_id: Any, squash: bool = False) -> dict[str, Any]:
         data = {"merge_method": "squash" if squash else "merge"}
         return _api_call(self.config, "PUT",
                          f"/pulls/{mr_id}/merge", data=data)
 
-    def close_mr(self, mr_id: Any) -> dict:
+    def close_mr(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "PATCH",
                          f"/pulls/{mr_id}",
                          data={"state": "closed"})
 
-    def get_mr_changes(self, mr_id: Any) -> dict:
+    def get_mr_changes(self, mr_id: Any) -> dict[str, Any]:
         return _api_call(self.config, "GET", f"/pulls/{mr_id}/files")
 
-    def get_mr_approvals(self, mr_id: Any) -> dict:
+    def get_mr_approvals(self, mr_id: Any) -> dict[str, Any]:
         """Get PR approval status from reviews."""
         result = _api_call(self.config, "GET", f"/pulls/{mr_id}/reviews")
         if isinstance(result, list):
@@ -463,11 +461,12 @@ class GitHubProvider(BoardProvider):
     # ----- Backward-compatible aliases -----
 
     def create_story(self, story_id: str, title: str, description: str,
-                     priority: str = "medium", assigned_to: Optional[str] = None) -> dict:
+                     priority: str = "medium", assigned_to: str | None = None) -> dict[str, Any]:
         result = super().create_story(story_id, title, description,
                                       priority, assigned_to)
         if result.get("number"):
             self._issue_cache[story_id] = result["number"]
+            self._cache_timestamps[story_id] = time.time()
         return result
 
 

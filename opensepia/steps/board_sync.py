@@ -55,7 +55,7 @@ class BoardSyncStep:
             created, updated = sync_to_provider(items, sprint_statuses, provider, ctx.board_dir)
             log.step("board_sync", f"{created} created, {updated} updated")
 
-        except Exception as e:
+        except (ImportError, OSError, ValueError, KeyError) as e:
             logger.warning("Board sync failed: %s", e)
             log.warn(f"Board sync failed (non-critical): {e}")
 

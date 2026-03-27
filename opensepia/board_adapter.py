@@ -11,12 +11,16 @@ Two implementations:
 """
 
 import os
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from opensepia.agents.parser import ParsedFile
+
+# Shared regex for matching story/bug IDs across the codebase
+STORY_BUG_ID_RE = re.compile(r"((?:STORY|BUG)-\d+)", re.IGNORECASE)
 
 
 @dataclass
@@ -62,7 +66,7 @@ class BoardAdapter(ABC):
         ...
 
     @abstractmethod
-    def ensure_board_ready(self) -> None:
+    def ensure_board_ready(self, agents_config: dict | None = None) -> None:
         """Ensure the board is ready (create dirs, inbox files, etc.)."""
         ...
 
