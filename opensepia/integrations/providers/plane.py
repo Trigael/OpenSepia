@@ -100,10 +100,19 @@ class PlaneProvider(BoardProvider):
 
     def create_project(self, name: str, description: str = "") -> dict:
         """Create a new project in the workspace. Returns project dict or error."""
+        import re
+        # Derive a short identifier (max 12 chars, uppercase letters/digits)
+        identifier = re.sub(r'[^A-Z0-9]', '', name.upper())[:5]
+        if not identifier:
+            identifier = "PROJ"
         result = self._client.api("POST", "/projects/", data={
             "name": name,
             "description": description,
+            "identifier": identifier,
             "network": 2,  # 0=secret, 2=public within workspace
+            "cycle_view": True,
+            "module_view": True,
+            "page_view": True,
         }, workspace_scope=True)
         return result if isinstance(result, dict) else {}
 
