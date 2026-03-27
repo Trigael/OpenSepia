@@ -372,7 +372,7 @@ class PlaneBoardAdapter(BoardAdapter):
                         state_id = find_state_id_for_status(states, current_status)
                         update_data: dict[str, Any] = {}
                         if state_id:
-                            update_data["state_id"] = state_id
+                            update_data["state"] = state_id
                         if assigned:
                             label_id = self._provider._get_label_id(f"agent::{assigned}")
                             if label_id:
@@ -433,7 +433,7 @@ class PlaneBoardAdapter(BoardAdapter):
                         "priority": map_opensepia_priority(current_priority),
                     }
                     if state_id:
-                        update["state_id"] = state_id
+                        update["state"] = state_id
                     if assigned:
                         label_id = self._provider._get_label_id(f"agent::{assigned}")
                         if label_id:

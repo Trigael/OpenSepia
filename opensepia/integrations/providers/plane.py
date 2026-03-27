@@ -329,7 +329,7 @@ class PlaneProvider(BoardProvider):
             states = self._get_states()
             state_id = find_state_id_for_status(states, state_label)
             if state_id:
-                data["state_id"] = state_id
+                data["state"] = state_id
 
         if label_ids:
             data["label_ids"] = label_ids
@@ -358,7 +358,7 @@ class PlaneProvider(BoardProvider):
         if not state_id:
             return {"error": "no 'done' state found"}
         result = self._client.api("PATCH", f"/work-items/{issue_id}/", data={
-            "state_id": state_id,
+            "state": state_id,
         })
         self._client.cache.invalidate_prefix("work_items")
         return result if isinstance(result, dict) else {}
@@ -370,7 +370,7 @@ class PlaneProvider(BoardProvider):
         if not state_id:
             return {"error": "no 'todo' state found"}
         result = self._client.api("PATCH", f"/work-items/{issue_id}/", data={
-            "state_id": state_id,
+            "state": state_id,
         })
         self._client.cache.invalidate_prefix("work_items")
         return result if isinstance(result, dict) else {}
@@ -397,7 +397,7 @@ class PlaneProvider(BoardProvider):
         if not state_id:
             return {"error": f"no state found for '{to_status}'"}
         result = self._client.api("PATCH", f"/work-items/{issue_id}/", data={
-            "state_id": state_id,
+            "state": state_id,
         })
         self._client.cache.invalidate_prefix("work_items")
         return result if isinstance(result, dict) else {}
@@ -444,7 +444,7 @@ class PlaneProvider(BoardProvider):
 
         result = []
         for item in items:
-            item_status = state_map.get(item.get("state_id", item.get("state", "")), "todo")
+            item_status = state_map.get(item.get("state", item.get("state", "")), "todo")
 
             if state == "opened" and item_status == "done":
                 continue
@@ -513,7 +513,7 @@ class PlaneProvider(BoardProvider):
         }
 
         for item in items:
-            status = state_map.get(item.get("state_id", item.get("state", "")), "todo")
+            status = state_map.get(item.get("state", item.get("state", "")), "todo")
             story_id = extract_story_id_from_title(item.get("name", ""))
             title = strip_title_prefix(item.get("name", ""))
             priority = map_plane_priority(item.get("priority"))
@@ -641,7 +641,7 @@ class PlaneProvider(BoardProvider):
             "priority": map_opensepia_priority(priority),
         }
         if state_id:
-            data["state_id"] = state_id
+            data["state"] = state_id
 
         # Set agent label
         label_ids = []
