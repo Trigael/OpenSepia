@@ -12,7 +12,7 @@ from opensepia.agents.workspace import (
     MAX_WORKSPACE_SUBDIRS,
     SKIP_DIRS,
 )
-from opensepia.agents.context import build_agent_context_from_adapter
+from opensepia.agents.context import build_agent_context_from_adapter, _strip_done_stories, _cap_text
 from opensepia.agents.writer import (
     read_file_safe,
     write_file,
@@ -167,6 +167,52 @@ class TestGetWorkspaceTree:
             assert "ok.txt" in result
         finally:
             bad.chmod(0o755)
+
+
+# ===========================================================================
+# context.py — _strip_done_stories / _cap_text helpers
+# ===========================================================================
+
+class TestStripDoneStories:
+    def test_strips_done_section(self):
+        text = "## TODO\n- STORY-001\n## DONE\n- STORY-002\n- STORY-003\n## BLOCKED\n- STORY-004"
+        result = _strip_done_stories(text)
+        assert "STORY-001" in result
+        assert "STORY-002" not in result
+        assert "STORY-003" not in result
+        assert "STORY-004" in result
+        assert "(completed stories omitted)" in result
+
+    def test_no_done_section(self):
+        text = "## TODO\n- STORY-001\n## IN PROGRESS\n- STORY-002"
+        result = _strip_done_stories(text)
+        assert "STORY-001" in result
+        assert "STORY-002" in result
+
+    def test_empty_text(self):
+        assert _strip_done_stories("") == ""
+
+    def test_preserves_done_header(self):
+        text = "## DONE\n- STORY-001"
+        result = _strip_done_stories(text)
+        assert "## DONE" in result
+        assert "STORY-001" not in result
+
+
+class TestCapText:
+    def test_short_text_unchanged(self):
+        assert _cap_text("hello", 100, "test") == "hello"
+
+    def test_long_text_truncated(self):
+        text = "x" * 200
+        result = _cap_text(text, 100, "myfield")
+        assert len(result) > 100  # includes truncation marker
+        assert "myfield truncated at 100 chars" in result
+        assert result.startswith("x" * 100)
+
+    def test_exact_limit_unchanged(self):
+        text = "x" * 100
+        assert _cap_text(text, 100, "test") == text
 
 
 # ===========================================================================
