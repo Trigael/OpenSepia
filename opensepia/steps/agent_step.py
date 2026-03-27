@@ -3,11 +3,12 @@ AI Dev Team — Per-agent pipeline steps.
 
 Replaces the monolithic AgentRunnerStep with individual steps per agent:
   - AgentStep: run a single agent (context → Claude → parse → apply)
-  - AgentCommitStep: git commit this agent's changes
-  - AgentSyncStep: make changes visible to the next agent (archive inbox)
+  - AgentCommitStep: git commit this agent's changes on a story branch
+  - AgentSyncStep: make changes visible, archive inbox, merge DONE story branches
   - InitStandupStep: initialize standup for the cycle
 """
 
+import re
 import subprocess
 import logging
 import time
@@ -76,7 +77,6 @@ class AgentStep:
 
         log.progress(agent_name, len(ctx.agent_results) + 1, len(ctx.agent_ids), agent_color)
 
-        # Get execution params with per-agent overrides
         exec_cfg = ctx.agents_config.get("execution", {})
         params = {
             "timeout": exec_cfg.get("timeout", DEFAULT_EXECUTION["timeout"]),
@@ -133,6 +133,7 @@ class AgentStep:
                         result_dict["error"] = error_msg
                         elapsed = time.time() - start_time
                         log.agent_error(agent_name, error_msg)
+                        logger.warning("Agent %s failed: %s (%.0fs)", agent_id, error_msg, elapsed)
                         ctx.agent_results.append(result_dict)
                         ctx.current_agent_id = agent_id
                         ctx.current_agent_result = result_dict
@@ -183,8 +184,47 @@ class AgentStep:
         return ctx
 
 
+# =============================================================================
+# Git helpers
+# =============================================================================
+
+def _git(workspace: Path, *args: str, check: bool = False) -> subprocess.CompletedProcess:
+    """Run a git command in the workspace."""
+    return subprocess.run(
+        ["git"] + list(args),
+        capture_output=True, text=True,
+        cwd=str(workspace), timeout=30,
+    )
+
+
+def _extract_story_id(result: dict | None) -> str | None:
+    """Extract the primary story ID from an agent's result/response.
+
+    Looks for STORY-XXX or BUG-XXX references. Returns the first one found,
+    or None if no story referenced.
+    """
+    if not result:
+        return None
+    response = result.get("response", "")
+    refs = re.findall(r'((?:STORY|BUG)-\d+)', response)
+    return refs[0] if refs else None
+
+
+def _story_branch_name(story_id: str) -> str:
+    """Convert STORY-001 to story/story-001 branch name."""
+    return f"story/{story_id.lower()}"
+
+
+# =============================================================================
+# AgentCommitStep — per-story branch commits
+# =============================================================================
+
 class AgentCommitStep:
-    """Git commit this agent's workspace changes."""
+    """Git commit this agent's workspace changes on a story branch.
+
+    If the agent worked on a specific story, creates/switches to a
+    story branch before committing. Falls back to master if no story detected.
+    """
 
     def __init__(self, agent_id: str):
         self.agent_id = agent_id
@@ -201,52 +241,68 @@ class AgentCommitStep:
             return ctx
 
         workspace = ctx.workspace_dir
-        git_dir = workspace / ".git"
-
-        if not git_dir.exists():
+        if not (workspace / ".git").exists():
             return ctx
 
-        # Get agent display name for commit author
         agent_cfg = ctx.agents_config["agents"].get(self.agent_id, {})
         author_name = agent_cfg.get("name", self.agent_id)
         author_email = f"{self.agent_id}@opensepia.ai"
 
         try:
             # Stage all changes
-            subprocess.run(
-                ["git", "add", "-A"],
-                capture_output=True, text=True,
-                cwd=str(workspace), timeout=30,
-            )
+            _git(workspace, "add", "-A")
 
             # Check if there are changes to commit
-            diff = subprocess.run(
-                ["git", "diff", "--cached", "--quiet"],
-                capture_output=True, text=True,
-                cwd=str(workspace), timeout=10,
-            )
+            diff = _git(workspace, "diff", "--cached", "--quiet")
             if diff.returncode == 0:
                 log.step_detail(self._name, "No changes to commit")
                 return ctx
 
-            # Commit with agent as author
-            msg = f"feat({self.agent_id}): sprint {ctx.sprint_num} cycle {ctx.cycle_num}"
-            subprocess.run(
-                ["git", "commit", "-m", msg, f"--author={author_name} <{author_email}>"],
-                capture_output=True, text=True,
-                cwd=str(workspace), timeout=30,
-            )
+            # Detect story from agent's result
+            story_id = _extract_story_id(ctx.current_agent_result)
+            branch = None
 
-            log.step_detail(self._name, f"Committed as {author_name}")
+            if story_id:
+                branch = _story_branch_name(story_id)
+
+                # Create or switch to story branch
+                existing = _git(workspace, "branch", "--list", branch)
+                if branch in existing.stdout:
+                    _git(workspace, "checkout", branch)
+                else:
+                    _git(workspace, "checkout", "-b", branch)
+
+                # Re-stage after branch switch (working tree carries over)
+                _git(workspace, "add", "-A")
+
+            # Commit
+            msg = f"feat({self.agent_id}): sprint {ctx.sprint_num} cycle {ctx.cycle_num}"
+            if story_id:
+                msg = f"feat({self.agent_id}): {story_id} (s{ctx.sprint_num}c{ctx.cycle_num})"
+
+            _git(workspace, "commit", "-m", msg, f"--author={author_name} <{author_email}>")
+
+            if branch:
+                log.step_detail(self._name, f"Committed to {branch} as {author_name}")
+                # Return to master
+                _git(workspace, "checkout", "master")
+            else:
+                log.step_detail(self._name, f"Committed to master as {author_name}")
 
         except Exception as e:
             log.warn(f"Git commit for {self.agent_id} failed: {e}")
+            # Ensure we're back on master
+            _git(workspace, "checkout", "master")
 
         return ctx
 
 
+# =============================================================================
+# AgentSyncStep — archive inbox + merge DONE story branches
+# =============================================================================
+
 class AgentSyncStep:
-    """Make this agent's changes visible to subsequent agents. Archives inbox."""
+    """Make changes visible to next agent. Archive inbox. Merge DONE story branches."""
 
     def __init__(self, agent_id: str):
         self.agent_id = agent_id
@@ -265,4 +321,66 @@ class AgentSyncStep:
         adapter = ctx.board_adapter
         adapter.archive_inbox(self.agent_id)
 
+        # Check for stories that moved to DONE and merge their branches
+        self._merge_done_stories(ctx)
+
         return ctx
+
+    def _merge_done_stories(self, ctx: PipelineContext) -> None:
+        """If any stories moved to DONE, merge their story branches to master."""
+        workspace = ctx.workspace_dir
+        if not (workspace / ".git").exists():
+            return
+
+        # Get list of story branches
+        result = _git(workspace, "branch", "--list", "story/*")
+        if not result.stdout.strip():
+            return
+
+        branches = [b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()]
+
+        # Check which stories are DONE (from board adapter)
+        try:
+            summary = ctx.board_adapter.get_board_summary()
+        except Exception:
+            return
+
+        # Get sprint text to find DONE stories
+        try:
+            sprint_text = ctx.board_adapter.get_sprint_text()
+        except Exception:
+            return
+
+        done_ids = set()
+        in_done_section = False
+        for line in sprint_text.split("\n"):
+            stripped = line.strip().lower()
+            if stripped.startswith("## "):
+                in_done_section = "done" in stripped
+            elif in_done_section:
+                refs = re.findall(r'((?:STORY|BUG)-\d+)', line, re.IGNORECASE)
+                done_ids.update(r.upper() for r in refs)
+
+        # Merge branches for DONE stories
+        for branch in branches:
+            # Extract story ID from branch name: story/story-001 → STORY-001
+            match = re.search(r'story/((?:story|bug)-\d+)', branch)
+            if not match:
+                continue
+            story_id = match.group(1).upper()
+
+            if story_id in done_ids:
+                # Merge to master
+                _git(workspace, "checkout", "master")
+                result = _git(workspace, "merge", branch, "--no-ff",
+                              "-m", f"Merge {story_id}: completed")
+                if result.returncode == 0:
+                    # Delete the story branch
+                    _git(workspace, "branch", "-d", branch)
+                    logger.info("Merged story branch %s to master", branch)
+                    log.step_detail(self._name, f"Merged {branch} to master")
+                else:
+                    logger.warning("Failed to merge %s: %s", branch, result.stderr[:100])
+                    # Ensure we're back on master
+                    _git(workspace, "merge", "--abort")
+                    _git(workspace, "checkout", "master")
