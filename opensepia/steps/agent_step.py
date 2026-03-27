@@ -249,12 +249,9 @@ class AgentCommitStep:
         author_email = f"{self.agent_id}@opensepia.ai"
 
         try:
-            # Stage all changes
-            _git(workspace, "add", "-A")
-
-            # Check if there are changes to commit
-            diff = _git(workspace, "diff", "--cached", "--quiet")
-            if diff.returncode == 0:
+            # Check if there are unstaged changes (don't stage yet — may need to switch branch)
+            status = _git(workspace, "status", "--porcelain")
+            if not status.stdout.strip():
                 log.step_detail(self._name, "No changes to commit")
                 return ctx
 
@@ -265,15 +262,29 @@ class AgentCommitStep:
             if story_id:
                 branch = _story_branch_name(story_id)
 
-                # Create or switch to story branch
+                # Switch to story branch BEFORE staging (avoids conflicts with staged files)
                 existing = _git(workspace, "branch", "--list", branch)
                 if branch in existing.stdout:
-                    _git(workspace, "checkout", branch)
+                    result = _git(workspace, "checkout", branch)
+                    if result.returncode != 0:
+                        logger.warning("Checkout %s failed: %s — merging master into branch",
+                                       branch, result.stderr.strip())
+                        # Branch exists but checkout fails due to conflicts.
+                        # Stash, checkout, pop.
+                        _git(workspace, "stash", "--include-untracked")
+                        _git(workspace, "checkout", branch)
+                        # Merge master to keep branch up to date
+                        _git(workspace, "merge", "master", "--no-edit")
+                        pop = _git(workspace, "stash", "pop")
+                        if pop.returncode != 0:
+                            # Stash pop conflict — accept working tree version
+                            _git(workspace, "checkout", "--theirs", ".")
+                            _git(workspace, "stash", "drop")
                 else:
                     _git(workspace, "checkout", "-b", branch)
 
-                # Re-stage after branch switch (working tree carries over)
-                _git(workspace, "add", "-A")
+            # Stage all changes on the correct branch
+            _git(workspace, "add", "-A")
 
             # Commit
             msg = f"feat({self.agent_id}): sprint {ctx.sprint_num} cycle {ctx.cycle_num}"
