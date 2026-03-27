@@ -128,10 +128,17 @@ class TestPlaneMapping:
         assert map_plane_priority(None) == "medium"
 
     def test_reverse_priority(self):
-        assert map_opensepia_priority("critical") == 1
-        assert map_opensepia_priority("high") == 2
-        assert map_opensepia_priority("medium") == 3
-        assert map_opensepia_priority("low") == 4
+        assert map_opensepia_priority("critical") == "urgent"
+        assert map_opensepia_priority("high") == "high"
+        assert map_opensepia_priority("medium") == "medium"
+        assert map_opensepia_priority("low") == "low"
+
+    def test_plane_string_priority(self):
+        assert map_plane_priority("urgent") == "critical"
+        assert map_plane_priority("high") == "high"
+        assert map_plane_priority("medium") == "medium"
+        assert map_plane_priority("low") == "low"
+        assert map_plane_priority("none") == "low"
 
     def test_extract_story_id(self):
         assert extract_story_id_from_title("[STORY-001] Login page") == "STORY-001"

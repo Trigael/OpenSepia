@@ -89,10 +89,21 @@ def find_state_id_for_status(
 
 
 # ---------------------------------------------------------------------------
-# Priority mapping (Plane 0-4 <-> OpenSepia named priorities)
+# Priority mapping (Plane <-> OpenSepia named priorities)
 # ---------------------------------------------------------------------------
-# Plane: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low
-PLANE_PRIORITY_TO_OPENSEPIA: dict[int, str] = {
+# Plane v1.2.x uses strings: "none", "low", "medium", "high", "urgent"
+# Newer Plane versions may use integers: 0=None, 1=Urgent, 2=High, 3=Medium, 4=Low
+# We support both formats.
+
+PLANE_PRIORITY_STR_TO_OPENSEPIA: dict[str, str] = {
+    "none": "low",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "urgent": "critical",
+}
+
+PLANE_PRIORITY_INT_TO_OPENSEPIA: dict[int, str] = {
     0: "low",       # None -> low
     1: "critical",  # Urgent -> critical
     2: "high",
@@ -100,7 +111,14 @@ PLANE_PRIORITY_TO_OPENSEPIA: dict[int, str] = {
     4: "low",
 }
 
-OPENSEPIA_PRIORITY_TO_PLANE: dict[str, int] = {
+OPENSEPIA_PRIORITY_TO_PLANE_STR: dict[str, str] = {
+    "critical": "urgent",
+    "high": "high",
+    "medium": "medium",
+    "low": "low",
+}
+
+OPENSEPIA_PRIORITY_TO_PLANE_INT: dict[str, int] = {
     "critical": 1,
     "high": 2,
     "medium": 3,
@@ -108,14 +126,17 @@ OPENSEPIA_PRIORITY_TO_PLANE: dict[str, int] = {
 }
 
 
-def map_plane_priority(priority: int | None) -> str:
+def map_plane_priority(priority: int | str | None) -> str:
     if priority is None:
         return "medium"
-    return PLANE_PRIORITY_TO_OPENSEPIA.get(priority, "medium")
+    if isinstance(priority, str):
+        return PLANE_PRIORITY_STR_TO_OPENSEPIA.get(priority.lower(), "medium")
+    return PLANE_PRIORITY_INT_TO_OPENSEPIA.get(priority, "medium")
 
 
-def map_opensepia_priority(priority: str) -> int:
-    return OPENSEPIA_PRIORITY_TO_PLANE.get(priority.lower(), 3)
+def map_opensepia_priority(priority: str) -> str:
+    """Map OpenSepia priority to Plane priority string."""
+    return OPENSEPIA_PRIORITY_TO_PLANE_STR.get(priority.lower(), "medium")
 
 
 # ---------------------------------------------------------------------------

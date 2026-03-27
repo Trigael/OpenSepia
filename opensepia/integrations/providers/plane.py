@@ -194,8 +194,9 @@ class PlaneProvider(BoardProvider):
             if cycle.get("name", "").strip() == cycle_name:
                 return cycle["id"]
 
-        result = self._client.api("POST", "/cycles/", data={
+        result = self._client.api_with_retry("POST", "/cycles/", data={
             "name": cycle_name,
+            "project_id": self._config.project_id,
         })
         if isinstance(result, dict) and "error" not in result:
             self._client.cache.invalidate("cycles")

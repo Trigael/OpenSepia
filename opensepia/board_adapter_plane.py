@@ -546,8 +546,8 @@ class PlaneBoardAdapter(BoardAdapter):
 
     def ensure_board_ready(self, agents_config: dict | None = None) -> None:
         """Ensure Plane project is set up with required infrastructure."""
-        # Verify connectivity
-        result = self._client.api("GET", "/states/")
+        # Verify connectivity (with retry for rate limits)
+        result = self._client.api_with_retry("GET", "/states/")
         if isinstance(result, dict) and "error" in result:
             logger.warning("Plane.so not reachable: %s", result)
             return
