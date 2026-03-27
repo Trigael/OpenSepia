@@ -11,6 +11,7 @@ import json
 import logging
 import urllib.request
 import urllib.parse
+import urllib.error
 from pathlib import Path
 from typing import Any, Optional
 
@@ -57,6 +58,10 @@ class BoardServerAdapter(BoardAdapter):
             with urllib.request.urlopen(req, timeout=10) as resp:
                 text = resp.read().decode("utf-8")
                 return json.loads(text) if text else {}
+        except urllib.error.HTTPError as e:
+            error_code = e.code
+            logger.debug("Board server API %s %s: HTTP %d", method, path, error_code)
+            return {"error": error_code, "message": str(e)}
         except Exception as e:
             logger.warning("Board server API %s %s: %s", method, path, e)
             return {"error": str(e)}
@@ -259,8 +264,22 @@ class BoardServerAdapter(BoardAdapter):
             if current_status and ("STORY-" in line or "BUG-" in line):
                 refs = re.findall(r'((?:STORY|BUG)-\d+)', line)
                 for ref in refs:
-                    self._api("PATCH", f"/items/{ref}",
-                              data={"status": current_status}, agent=agent_id)
+                    # Extract title from line: "- [ ] STORY-001: Title here (dev1)"
+                    title_match = re.search(rf'{re.escape(ref)}[:\s]+(.+?)(?:\s*\(|$)', line)
+                    title = title_match.group(1).strip() if title_match else ref
+
+                    result = self._api("PATCH", f"/items/{ref}",
+                                       data={"status": current_status}, agent=agent_id)
+
+                    # Upsert: if item doesn't exist (404), create it
+                    if isinstance(result, dict) and result.get("error") == 404:
+                        item_type = "bug" if ref.startswith("BUG-") else "story"
+                        self._api("POST", "/items", data={
+                            "type": item_type,
+                            "title": title,
+                            "status": current_status,
+                        }, agent=agent_id)
+                        logger.info("Created missing item %s via upsert: %s", ref, title)
 
     def _apply_backlog_update(self, content: str, agent_id: str) -> None:
         """Parse backlog markdown and create/update items on board server."""

@@ -95,11 +95,15 @@ class AgentStep:
 
         standup_file = ctx.board_dir / "standup.md"
         start_time = time.time()
+        logger.info("Agent %s (%s) starting — timeout %ds, %d retries",
+                     agent_id, agent_name, timeout, max_retries)
 
         for attempt in range(1 + max_retries):
             try:
                 agent_ctx = adapter.get_agent_context(agent_id, ctx.agents_config, ctx.project_config)
                 context = build_agent_context_from_adapter(agent_id, ctx.agents_config, agent_ctx)
+                logger.info("Agent %s context: %d chars, inbox: %d chars",
+                            agent_id, len(context), len(agent_ctx.inbox))
 
                 agent_result = invoke_agent(
                     agent_id=agent_id,
@@ -146,6 +150,9 @@ class AgentStep:
 
                     elapsed = time.time() - start_time
                     log.agent_done(agent_name, files_written, elapsed)
+                    logger.info("Agent %s done — %d files, %.0fs, %d ctx / %d resp chars",
+                                agent_id, files_written, elapsed,
+                                agent_result.context_size, agent_result.response_size)
 
                     ctx.agent_results.append(result_dict)
                     ctx.current_agent_id = agent_id

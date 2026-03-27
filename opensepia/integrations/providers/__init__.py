@@ -27,7 +27,7 @@ def detect_provider() -> Optional[BoardProvider]:
         from .boardserver import BoardServerProvider
         provider = BoardServerProvider()
         if provider.enabled:
-            logger.info("Board provider: Board Server (%s)", os.getenv("BOARD_SERVER_URL"))
+            logger.debug("Board provider: Board Server (%s)", os.getenv("BOARD_SERVER_URL"))
             return provider
 
     # GitLab
@@ -35,7 +35,7 @@ def detect_provider() -> Optional[BoardProvider]:
         from .gitlab import GitLabProvider
         provider = GitLabProvider()
         if provider.enabled:
-            logger.info("Board provider: GitLab")
+            logger.debug("Board provider: GitLab")
             return provider
 
     # GitHub
@@ -43,7 +43,7 @@ def detect_provider() -> Optional[BoardProvider]:
         from .github import GitHubProvider
         provider = GitHubProvider()
         if provider.enabled:
-            logger.info("Board provider: GitHub")
+            logger.debug("Board provider: GitHub")
             return provider
 
     # Markdown (local files — always available as fallback)
@@ -56,7 +56,7 @@ def detect_provider() -> Optional[BoardProvider]:
         board_dir = None
     provider = MarkdownProvider(board_dir=board_dir)
     if provider.enabled:
-        logger.info("Board provider: Markdown (local files)")
+        logger.debug("Board provider: Markdown (local files)")
         return provider
 
     logger.warning("No board provider found")

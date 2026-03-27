@@ -246,7 +246,16 @@ class OrchestratorDaemon:
                 self._state.current_step = "starting"
                 self._state.save(self.state_path)
 
+                cycle_start = datetime.now()
+                logger.info("=== Cycle %d starting (mode: %s) ===",
+                            self._state.cycle_count + 1, self.mode)
+
                 result, errors = self._run_single_cycle()
+
+                cycle_elapsed = (datetime.now() - cycle_start).total_seconds()
+                logger.info("=== Cycle %d done (%s, %.0fs) — %s ===",
+                            self._state.cycle_count + 1, result, cycle_elapsed,
+                            f"{len(errors)} errors" if errors else "clean")
 
                 self._state.cycle_count += 1
                 self._state.last_cycle_finished_at = datetime.now().isoformat()
