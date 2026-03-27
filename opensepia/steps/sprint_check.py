@@ -160,17 +160,15 @@ class SprintSyncStep:
         sprint_cfg = ctx.project_config.get("sprint", {})
         yaml_sprint = sprint_cfg.get("current_sprint", 1)
 
-        if board_sprint != yaml_sprint:
+        # Only advance forward — never let the board pull the sprint number backward
+        # (agents may write "Sprint 1" in their markdown even after the system advanced to Sprint 2)
+        if board_sprint > yaml_sprint:
             sprint_cfg["current_sprint"] = board_sprint
-            if board_sprint > yaml_sprint:
-                sprint_cfg["current_cycle"] = 1
-                log.step("sprint_sync", f"Sprint sync: {yaml_sprint} -> {board_sprint} (cycle reset to 1)")
-            else:
-                log.step("sprint_sync", f"Sprint sync: {yaml_sprint} -> {board_sprint}")
-
+            sprint_cfg["current_cycle"] = 1
             ctx.project_config["sprint"] = sprint_cfg
             ctx.sprint_num = board_sprint
             with open(ctx.project_dir / "project.yaml", "w", encoding="utf-8") as f:
                 yaml.dump(ctx.project_config, f, default_flow_style=False, allow_unicode=True)
+            log.step("sprint_sync", f"Sprint sync: {yaml_sprint} -> {board_sprint} (cycle reset to 1)")
 
         return ctx

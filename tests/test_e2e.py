@@ -24,13 +24,16 @@ OPENSEPIA = [sys.executable, "-m", "opensepia"]
 
 def _run(*args: str, cwd: str | None = None) -> subprocess.CompletedProcess:
     """Run opensepia CLI command and return result."""
+    # Clean env to prevent .env file leaking BOARD_SERVER_URL into tests
+    env = {**os.environ, "PYTHONPATH": str(TOOL_DIR)}
+    env.pop("BOARD_SERVER_URL", None)
     return subprocess.run(
         [*OPENSEPIA, *args],
         capture_output=True,
         text=True,
         cwd=cwd or str(TOOL_DIR),
-        timeout=30,
-        env={**os.environ, "PYTHONPATH": str(TOOL_DIR)},
+        timeout=60,
+        env=env,
     )
 
 

@@ -4,11 +4,13 @@ limits:
   max_tokens_per_agent: 8192
   pause_between_agents: 5
 project:
-  description: 'A better version of the board server. Build a modern, async Python
-    board server with: FastAPI instead of stdlib http.server, WebSocket support for
-    real-time updates, better search with full-text indexing, role-based access control,
-    file attachments on items, sprint management with burndown charts, and a React
-    frontend with drag-and-drop kanban.'
+  description: 'Build a production-ready project board server for AI agent workflows.
+    Tech: Python 3.10+, FastAPI, SQLite, vanilla HTML/JS frontend. Features: REST
+    API for items (stories/bugs) with configurable YAML schema, comments with author
+    tracking, agent inbox system, event system with webhooks, web UI with kanban board
+    and item detail, sprint management, full-text search, sequential IDs (STORY-001),
+    thread-safe SQLite. No external deps beyond fastapi + uvicorn + pyyaml. Test suite
+    required.'
   name: Board Server v2
   paths:
     archive: board/archive
@@ -17,11 +19,11 @@ project:
     workspace: workspace
   tech_stack:
     ci_cd: gitlab/github
-    database: mongodb
+    database: sqlite
     deployment: docker
-    framework: fastapi + angular
-    language: python + typescript
+    framework: fastapi
+    language: python
 sprint:
-  current_cycle: 2
-  current_sprint: 1
+  current_cycle: 0
+  current_sprint: 2
   cycles_per_sprint: 10
