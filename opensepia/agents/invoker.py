@@ -3,7 +3,8 @@ AI Dev Team — Claude Code CLI invocation with retry logic.
 
 Enforces agent confinement:
 - Per-agent tool restrictions (PO/PM can't run Bash)
-- Process group cleanup on timeout (kills orphaned children)
+- Process group cleanup on ALL exit paths (prevents zombie accumulation)
+- Two-phase kill: SIGTERM → wait → SIGKILL
 - Working directory locked to project_dir
 """
 
@@ -11,6 +12,7 @@ import os
 import signal
 import logging
 import subprocess
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +44,33 @@ class AgentResult:
     attempt: int = 1
 
 
+def _kill_process_group(pgid: int, grace_period: float = 2.0) -> None:
+    """Two-phase kill: SIGTERM the group, wait, then SIGKILL survivors.
+
+    Safe to call even if the group is already dead.
+    """
+    # Phase 1: SIGTERM
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        return  # Already gone
+
+    # Phase 2: Wait for processes to die, then SIGKILL if needed
+    deadline = time.monotonic() + grace_period
+    while time.monotonic() < deadline:
+        try:
+            os.killpg(pgid, 0)  # Probe: is anything still alive?
+        except (ProcessLookupError, OSError):
+            return  # All dead
+        time.sleep(0.1)
+
+    # Survivors remain — escalate to SIGKILL
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        pass
+
+
 def call_claude_code(
     prompt: str,
     base_dir: Path,
@@ -50,6 +79,10 @@ def call_claude_code(
     allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
 ) -> str:
     """Call Claude Code CLI with a prompt.
+
+    Process lifecycle: Popen → communicate → finally: kill entire process group.
+    The finally block ensures ALL child processes (pytest, bash, etc.) are
+    killed on every exit path: success, timeout, error, or exception.
 
     Args:
         prompt: Full prompt text to send via stdin.
@@ -79,7 +112,7 @@ def call_claude_code(
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
 
-    # Start in new process group so we can kill the entire tree on timeout
+    # Start in new process group so we can kill the entire tree
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.PIPE,
@@ -88,20 +121,32 @@ def call_claude_code(
         text=True,
         cwd=str(base_dir),
         env=env,
-        start_new_session=True,  # New process group for clean kill
+        start_new_session=True,
     )
+
+    # Capture process group ID immediately (before process might exit)
+    try:
+        pgid = os.getpgid(proc.pid)
+    except (ProcessLookupError, OSError):
+        pgid = None
 
     try:
         stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
     except subprocess.TimeoutExpired:
-        # Kill entire process group (including child pytest, bash, etc.)
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, OSError):
-            pass
+        # Kill the lead process first (unblocks communicate)
         proc.kill()
         proc.wait()
         raise
+    finally:
+        # ALWAYS clean up the entire process group — this is the critical fix.
+        # Runs on success, timeout, error, and any unexpected exception.
+        if pgid is not None:
+            _kill_process_group(pgid)
+        # Reap the lead process to prevent zombie entry in process table
+        try:
+            proc.wait(timeout=5)
+        except Exception:
+            pass
 
     if proc.returncode != 0:
         raise RuntimeError(f"Claude Code CLI error (exit {proc.returncode}): {stderr}")

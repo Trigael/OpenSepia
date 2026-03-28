@@ -277,6 +277,15 @@ class OrchestratorDaemon:
                 self._state.current_step = None
                 self._state.current_cycle_started_at = None
 
+                # Reap orphaned agent child processes from this cycle
+                try:
+                    from opensepia.agents.reaper import reap_orphaned_agents
+                    reaped = reap_orphaned_agents()
+                    if reaped:
+                        logger.info("Reaped %d orphaned agent processes", reaped)
+                except Exception:
+                    logger.debug("Process reaping failed", exc_info=True)
+
                 # Check cycle limit
                 if self.max_cycles and self._state.cycle_count >= self.max_cycles:
                     logger.info("Reached max cycles (%d). Stopping.", self.max_cycles)
@@ -314,6 +323,12 @@ class OrchestratorDaemon:
         except (OSError, RuntimeError, OrchestratorError) as e:
             logger.exception("Unexpected error in daemon loop: %s", e)
         finally:
+            # Final reap before exiting
+            try:
+                from opensepia.agents.reaper import reap_orphaned_agents
+                reap_orphaned_agents()
+            except Exception:
+                pass
             daemon_lock.release()
             self._state.mark_stopped(self.state_path)
             logger.info("Daemon stopped")
