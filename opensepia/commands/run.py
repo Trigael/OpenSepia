@@ -225,11 +225,14 @@ def cmd_run(argv: list[str]) -> None:
         log.warn(str(e))
         sys.exit(0)
 
+    prev_board_dir = os.environ.get("OPENSEPIA_BOARD_DIR")
     try:
         from opensepia.board_adapter import create_board_adapter
         board_adapter = create_board_adapter(
             config.board_dir, config.workspace_dir, config.project_dir,
         )
+
+        os.environ["OPENSEPIA_BOARD_DIR"] = str(config.board_dir)
 
         ctx = PipelineContext(
             mode=mode,
@@ -275,4 +278,8 @@ def cmd_run(argv: list[str]) -> None:
         log.error(f"FATAL: {e}")
         sys.exit(1)
     finally:
+        if prev_board_dir is None:
+            os.environ.pop("OPENSEPIA_BOARD_DIR", None)
+        else:
+            os.environ["OPENSEPIA_BOARD_DIR"] = prev_board_dir
         lock.release()

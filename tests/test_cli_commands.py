@@ -1346,6 +1346,101 @@ class TestCmdRun:
         captured = capsys.readouterr()
         assert "Claude Code CLI" in captured.out or "not in PATH" in captured.out
 
+    @patch("opensepia.cycle_state.CycleState")
+    @patch("opensepia.commands.run.build_pipeline")
+    @patch("opensepia.board_adapter.create_board_adapter")
+    @patch("opensepia.commands.run.ProcessLock")
+    @patch("opensepia.commands.run.check_workspace_git")
+    @patch("opensepia.commands.run.check_project_ready")
+    @patch("opensepia.commands.run.check_claude_cli")
+    @patch("opensepia.config.OrchestratorConfig.load")
+    def test_run_sets_board_dir_env(self, mock_load, mock_claude, mock_ready, mock_git,
+                                    mock_lock_cls, mock_ba, mock_build, mock_cs, mock_config):
+        """OPENSEPIA_BOARD_DIR is set during pipeline execution and cleaned up after."""
+        mock_load.return_value = mock_config
+        mock_claude.return_value = True
+        mock_ready.return_value = []
+        mock_git.return_value = {"initialized": True}
+
+        lock_instance = MagicMock()
+        mock_lock_cls.return_value = lock_instance
+
+        adapter = MagicMock()
+        mock_ba.return_value = adapter
+
+        captured_env = {}
+
+        def capture_env_on_run(ctx, **kwargs):
+            captured_env["OPENSEPIA_BOARD_DIR"] = os.environ.get("OPENSEPIA_BOARD_DIR")
+            result = MagicMock()
+            result.errors = []
+            return result
+
+        pipeline = MagicMock()
+        pipeline.run.side_effect = capture_env_on_run
+        mock_build.return_value = pipeline
+
+        resume_state = MagicMock()
+        resume_state.is_interrupted = False
+        mock_cs.load.return_value = resume_state
+
+        # Ensure the env var is not set before the test
+        os.environ.pop("OPENSEPIA_BOARD_DIR", None)
+
+        from opensepia.commands.run import cmd_run
+        cmd_run(["dev-team"])
+
+        # During pipeline.run, the env var should have been set to the board_dir
+        assert captured_env["OPENSEPIA_BOARD_DIR"] == str(mock_config.board_dir)
+
+        # After cmd_run returns, the env var should be cleaned up
+        assert "OPENSEPIA_BOARD_DIR" not in os.environ
+
+    @patch("opensepia.cycle_state.CycleState")
+    @patch("opensepia.commands.run.build_pipeline")
+    @patch("opensepia.board_adapter.create_board_adapter")
+    @patch("opensepia.commands.run.ProcessLock")
+    @patch("opensepia.commands.run.check_workspace_git")
+    @patch("opensepia.commands.run.check_project_ready")
+    @patch("opensepia.commands.run.check_claude_cli")
+    @patch("opensepia.config.OrchestratorConfig.load")
+    def test_run_restores_previous_board_dir_env(self, mock_load, mock_claude, mock_ready,
+                                                  mock_git, mock_lock_cls, mock_ba,
+                                                  mock_build, mock_cs, mock_config):
+        """OPENSEPIA_BOARD_DIR is restored to its previous value after cmd_run."""
+        mock_load.return_value = mock_config
+        mock_claude.return_value = True
+        mock_ready.return_value = []
+        mock_git.return_value = {"initialized": True}
+
+        lock_instance = MagicMock()
+        mock_lock_cls.return_value = lock_instance
+
+        adapter = MagicMock()
+        mock_ba.return_value = adapter
+
+        pipeline = MagicMock()
+        ctx_result = MagicMock()
+        ctx_result.errors = []
+        pipeline.run.return_value = ctx_result
+        mock_build.return_value = pipeline
+
+        resume_state = MagicMock()
+        resume_state.is_interrupted = False
+        mock_cs.load.return_value = resume_state
+
+        # Set a previous value
+        os.environ["OPENSEPIA_BOARD_DIR"] = "/old/board/dir"
+
+        from opensepia.commands.run import cmd_run
+        cmd_run(["dev-team"])
+
+        # After cmd_run, the previous value should be restored
+        assert os.environ.get("OPENSEPIA_BOARD_DIR") == "/old/board/dir"
+
+        # Cleanup
+        os.environ.pop("OPENSEPIA_BOARD_DIR", None)
+
 
 # =============================================================================
 # History command
