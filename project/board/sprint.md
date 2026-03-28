@@ -6,24 +6,20 @@
 ## TODO
 
 ## IN PROGRESS
-- [ ] STORY-002: Set up development environment (devops)
-- [ ] STORY-007: Implement AWS ECS provider (dev1)
-- [ ] STORY-012: Basic unit test suite (tester)
 
 ## REVIEW
-- [x] STORY-004: Implement CLI skeleton with Click (dev1)
-- [x] STORY-005: Define core data models and configuration schema (dev2)
-- [x] STORY-006: Implement provider abstraction layer (dev1)
+- [ ] STORY-012: Basic unit test suite (tester)
+
+## TESTING
+- [ ] STORY-007: Implement AWS ECS provider (dev1)
 
 ## DONE
-- [x] STORY-001: Define MVP scope (po)
-- [x] STORY-003: Create initial project structure (devops)
-
+(completed stories omitted)
 ## BLOCKED
 
-## Security Analysis [Cycle 7]
+## Security Analysis [Cycle 8]
 
-### Status of Previous Findings
+### Finding Status Summary
 
 | Finding | Status | Severity |
 |---------|--------|----------|
@@ -33,42 +29,40 @@
 | SEC-006 Port Exposure | CLOSED (fixed C3) | ~~MEDIUM~~ |
 | SEC-007 YAML Loading | CLOSED (safe) | ~~INFO~~ |
 | SEC-008 SQL Formatting | CLOSED (info) | ~~INFO~~ |
-| SEC-009 Healthcheck | VERIFIED FIXED (C5) | ~~LOW~~ |
+| SEC-009 Healthcheck | CLOSED (fixed C4) | ~~LOW~~ |
 | SEC-010 No Auth (deferred) | OPEN (deferred) | MEDIUM |
-| SEC-011 Missing SigV4 (ECS) | VERIFIED FIXED (C7) | ~~HIGH~~ |
-| SEC-012 Error Leakage | VERIFIED FIXED (C4) | ~~MEDIUM~~ |
-| SEC-013 Hardcoded Cluster | VERIFIED FIXED (C7) | ~~LOW~~ |
-| SEC-014 TLS Config | VERIFIED FIXED (C4) | ~~LOW~~ |
-| SEC-015 CloudWatch Unsigned | VERIFIED FIXED (C7) | ~~HIGH~~ |
+| SEC-011 Missing SigV4 (ECS) | CLOSED (fixed C6) | ~~HIGH~~ |
+| SEC-012 Error Leakage | CLOSED (fixed C4) | ~~MEDIUM~~ |
+| SEC-013 Hardcoded Cluster | CLOSED (fixed C6) | ~~LOW~~ |
+| SEC-014 TLS Config | CLOSED (fixed C4) | ~~LOW~~ |
+| SEC-015 CloudWatch Unsigned | CLOSED (fixed C7) | ~~HIGH~~ |
+| SEC-016 Public IP Default | CLOSED (verified C8) | ~~MEDIUM~~ |
+| SEC-017 Cluster State Mutation | CLOSED (verified C8) | ~~LOW~~ |
 
-### Pentest Verification — Cycle 7
+### Full Codebase Re-audit — Cycle 8
 
-**SEC-011 + SEC-015: AWS SigV4 Request Signing — VERIFIED FIXED ✓**
+Performed comprehensive re-audit of all workspace source files. Key observations:
 
-Verified by code review of `src/clouddeploy/providers/aws_ecs.py`:
+**STORY-007 (aws_ecs.py — TESTING)**: Security-clean. SigV4 signing covers all ECS and CloudWatch requests via shared `_sign_and_merge_headers()`. Credentials fail-closed (`_get_aws_credentials` raises on missing keys). Error handlers return generic messages to users; full details at DEBUG only. `assign_public_ip` defaults `False`. `deploy()` uses per-call `ecs_cfg.cluster` without mutating `self._cluster`. No new issues.
 
-1. **Signing coverage**: Both `_ecs_request()` (line 359) and `_logs_request()` (line 375) call `_sign_and_merge_headers()` before every HTTP POST. No code path can bypass signing.
-2. **Fail-closed**: `_get_aws_credentials()` raises `ValueError` when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` are missing or empty. No silent fallback to unsigned requests.
-3. **Header completeness**: `Authorization`, `X-Amz-Date`, `X-Amz-Content-Sha256` are set on every request. `X-Amz-Security-Token` included when STS credentials are present.
-4. **Single code path**: Both ECS and CloudWatch Logs requests share `_sign_and_merge_headers()` → `_sigv4_sign()`. No duplicate signing logic to drift.
-5. **Canonical request construction**: Content-Type is included in signed headers, preventing header tampering. Payload hash covers the request body.
-6. **Test coverage**: `test_sigv4.py` covers credential loading (success, with token, missing, empty), header generation, credential scope per region/service, fail-closed behavior, and verifies no HTTP call is made when credentials are absent.
+**STORY-012 (test suite — REVIEW)**: Test files use mock credentials (`AKIATESTKEY000EXAMPLE`), not real keys. No test calls real AWS endpoints. Monkeypatch properly scopes env vars. Security regression tests cover SEC-012 (error leakage), SEC-016 (public IP default), SEC-017 (cluster mutation). PASSED — no security concerns.
 
-**SEC-013: Hardcoded Default Cluster — VERIFIED FIXED ✓**
+**STORY-004/005/006 (DONE)**: Spot-checked — `yaml.safe_load`, parameterized SQL, strict input validation (`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`), path traversal protection all remain intact. No regressions.
 
-1. `AwsEcsProvider.__init__()` accepts `cluster` parameter, stores as `self._cluster`.
-2. `rollback()` (line 522), `status()` (line 558), `health_check()` (line 595) all use `self._cluster`.
-3. `deploy()` correctly reads cluster from `EcsConfig` for per-deployment override — no conflict.
-4. Test `test_provider_uses_configured_cluster` confirms cluster propagation to API calls.
+**Infrastructure (Dockerfile, docker-compose.yml)**: Redis password-protected, ports bound to 127.0.0.1, non-root container user, multi-stage build, TLS verification enabled (`verify=True`). No changes since last cycle.
 
-### Remaining Open Finding
+**Dependencies (pyproject.toml)**: click>=8.1, rich>=13.0, httpx>=0.27, pyyaml>=6.0, pydantic>=2.0 — all actively maintained, no known CVEs at current minimum versions.
 
-| Finding | Status | Severity | Notes |
-|---------|--------|----------|-------|
-| SEC-010 No Auth (deferred) | OPEN | MEDIUM | Deferred to STORY-011 (web dashboard). Acceptable for Sprint 1 CLI-only scope. |
+### New Findings — Cycle 8
 
-### Summary — Cycle 7 Security Posture
+(none)
 
-No remaining security blockers for STORY-007. All HIGH-severity findings are now verified fixed. The only open finding (SEC-010) is deferred to a future story and does not affect the current sprint scope.
+### Open Items
 
-**STORY-007 security gate: PASSED** — no security objection to moving to REVIEW/DONE.
+**SEC-010 (No Auth — Deferred)**: Remains deferred. No web-facing endpoints exist yet. Will become actionable when STORY-011 (web dashboard) enters development. Authentication, rate limiting, and CORS must be implemented before any HTTP listener goes live.
+
+### Security Sign-off
+
+**STORY-007**: APPROVED for promotion from TESTING. All prior findings (SEC-011 SigV4, SEC-012 error leakage, SEC-013 hardcoded cluster, SEC-015 CloudWatch unsigned, SEC-016 public IP, SEC-017 cluster mutation) verified fixed. No new attack surface.
+
+**STORY-012**: APPROVED from security perspective. Test suite does not introduce credentials, external calls, or insecure patterns.

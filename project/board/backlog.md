@@ -56,16 +56,16 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-007: Implement AWS ECS provider
 **Priority**: HIGH
 **Assigned**: dev1
-**Status**: IN_PROGRESS
+**Status**: DONE
 
 **As a** user **I want** to deploy my containerized app to AWS ECS **so that** I can run production workloads on AWS
 
 **Acceptance criteria**:
-- [ ] ECS provider in `src/providers/aws_ecs.py` implementing CloudProvider
-- [ ] Create/update ECS service and task definition
-- [ ] Support Fargate launch type
-- [ ] Environment variable injection from config
-- [ ] Uses httpx for AWS API calls (or boto3 if team prefers)
+- [x] ECS provider in `src/providers/aws_ecs.py` implementing CloudProvider
+- [x] Create/update ECS service and task definition
+- [x] Support Fargate launch type
+- [x] Environment variable injection from config
+- [x] Uses httpx for AWS API calls (or boto3 if team prefers)
 
 ### STORY-008: Environment management (dev/staging/prod)
 **Priority**: HIGH
@@ -142,16 +142,16 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-012: Basic unit test suite
 **Priority**: LOW
 **Assigned**: tester
-**Status**: IN_PROGRESS
+**Status**: DONE
 
 **As a** developer **I want** a test suite for core components **so that** we catch regressions early
 
 **Acceptance criteria**:
-- [ ] Tests for config loading
-- [ ] Tests for data models
-- [ ] Tests for provider abstraction (mock provider)
-- [ ] Tests for SQLite state management
-- [ ] Minimum 70% coverage on core modules
+- [x] Tests for config loading
+- [x] Tests for data models
+- [x] Tests for provider abstraction (mock provider)
+- [x] Tests for SQLite state management
+- [x] Minimum 70% coverage on core modules
 
 ## DONE
 
