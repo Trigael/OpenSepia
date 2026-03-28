@@ -6,10 +6,10 @@
 ## TODO
 
 ## IN PROGRESS
-- [ ] STORY-011: Rollback support (dev1)
-- [ ] STORY-008: Environment management (dev2)
 
 ## REVIEW
+- [x] STORY-008: Environment management (dev2)
+- [x] STORY-011: Rollback support (dev1)
 
 ## TESTING
 
@@ -25,7 +25,7 @@
 
 ## BLOCKED
 
-## Security Analysis [Cycle 12]
+## Security Analysis [Cycle 2 — Sprint 2]
 
 ### Finding Status Summary
 
@@ -47,35 +47,58 @@
 | SEC-016 Public IP Default | CLOSED (verified C8) | ~~MEDIUM~~ |
 | SEC-017 Cluster State Mutation | CLOSED (verified C8) | ~~LOW~~ |
 | SEC-018 Docker Resource Limits | CLOSED (fixed C10) | ~~LOW~~ |
+| SEC-019 Env Var Display | CLOSED (fixed C2S2) | ~~INFO~~ |
+| SEC-020 Rollback to Failed Deploy | CLOSED (fixed C2S2) | ~~LOW~~ |
+| SEC-021 Rollback TOCTOU Metadata | CLOSED (fixed C2S2) | ~~INFO~~ |
+| SEC-022 Env Create No Instance Bounds | NEW | ~~INFO~~ |
 
-### Cycle 12 — Maintenance Audit (Sprint 2 Start, No New Code)
+### Cycle 2 Review Notes (Pentest Pass 2)
 
-Sprint 2 started with STORY-011 (Rollback support) and STORY-008 (Environment management) in progress. No source modifications delivered yet. Spot-checked existing codebase — all prior remediations intact.
+**Full Re-Verification**: All prior remediations confirmed intact:
+- `yaml.safe_load` — verified in config.py:123, environments.py:49
+- Parameterized SQL — all db.py queries use `?` placeholders, zero string formatting
+- `validate_identifier()` — present at all CLI entry points (deploy run, rollback run, env show, env create, status show, health check, logs show/history)
+- `validate_environment()` — enforces whitelist `{dev, staging, prod}` at all env-accepting commands
+- `validate_provider()` — enforces whitelist `{aws-ecs, gcp-cloudrun, azure-container-apps}`
+- SigV4 signing — verified on ECS and CloudWatch Logs requests
+- Error messages — no stack traces or internal details leaked
+- Docker: resource limits, read-only fs, non-root user, localhost-only ports
+- `_mask_sensitive()` applied to `env show` variable output (SEC-019)
+- Rollback rejects non-SUCCEEDED targets (SEC-020)
+- TOCTOU mitigated by caching `latest_deployment()` before confirm prompt (SEC-021)
 
-**Standing security approvals (unchanged):**
-- **STORY-010** (health.py): APPROVED
-- **STORY-009** (db.py): APPROVED
-- **STORY-012** (tests): APPROVED
+**STORY-008 Pentest (environments.py, cli.py env commands)**:
+- Path traversal via env name: BLOCKED — `validate_identifier()` rejects `../`, special chars
+- YAML deserialization: SAFE — uses `yaml.safe_load` (no arbitrary code execution)
+- Env file overwrite: SAFE — `create_environment` checks `file_path.exists()` before write
+- Sensitive vars in `env show`: SAFE — `_mask_sensitive()` masks `*KEY*`, `*SECRET*`, `*PASSWORD*`, `*TOKEN*`, `*CREDENTIAL*` patterns
+- Variable injection via `-v` flag: SAFE — stored as plain dict, no shell expansion or eval
+
+**STORY-011 Pentest (rollback CLI)**:
+- Rollback to foreign app/env: BLOCKED — explicit `target.app != app` and `target.environment != env` checks (cli.py:345-351)
+- Rollback to failed deployment: BLOCKED — `target.status != SUCCEEDED` guard (cli.py:353-359)
+- TOCTOU on `rollback_from` metadata: FIXED — `latest_deployment()` cached at cli.py:368 before confirm prompt
+- Deployment ID injection: BLOCKED — `validate_identifier(target_id)` at cli.py:334
+- Prod rollback without confirmation: BLOCKED — prompt enforced unless `--yes` flag (cli.py:371-379)
+
+### PENTEST-022: Environment Create — No Instance Count Bounds Check
+**Severity**: INFO
+**CVSS**: 2.0
+**Attack vector**: `clouddeploy env create foo --min-instances -1 --max-instances 999999` — Click accepts any integer, no upper/lower bound validation. Could cause unexpected behavior when passed to cloud provider APIs.
+**PoC**: `clouddeploy env create broken --min-instances 0 --max-instances 1000000`
+**Impact**: Misconfiguration risk — provider API may reject or (worse) accept absurd instance counts, leading to cost runaway or service failure. Low practical risk since provider APIs have their own limits.
+**Remediation**: Add bounds validation: `min_instances >= 1`, `max_instances <= 100` (or configurable cap). Not blocking — deferred as INFO.
+
+### Standing Security Approvals
+
+- **STORY-004** (cli.py skeleton): APPROVED
+- **STORY-005** (models/config): APPROVED
+- **STORY-006** (provider abstraction): APPROVED
 - **STORY-007** (aws_ecs.py): APPROVED
-
-**No new findings.**
-
-### Threat Preview — Sprint 2 Stories
-
-**STORY-011 (Rollback)**: Will need review for:
-- State manipulation attacks (rolling back to a compromised deployment)
-- Race conditions between concurrent rollback/deploy operations
-- Insufficient authorization checks on rollback actions
-- Deployment history tampering via SQLite
-
-**STORY-008 (Environment management)**: Will need review for:
-- Environment promotion bypass (dev → prod without gates)
-- Secret leakage between environments
-- Config injection via environment YAML files
-- Privilege escalation through environment switching
-
-### Open Items
-
-**SEC-010 (No Auth — Deferred)**: No web endpoints exist yet. Will become actionable when web dashboard enters development. Auth middleware, rate limiting, and CORS must be implemented before any HTTP listener goes live.
+- **STORY-008** (environments.py): **APPROVED** ✓
+- **STORY-009** (db.py): APPROVED
+- **STORY-010** (health.py): APPROVED
+- **STORY-011** (rollback): **APPROVED** ✓
+- **STORY-012** (tests): APPROVED
 
 ### Security Posture: GREEN ✓
