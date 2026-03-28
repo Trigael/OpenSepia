@@ -58,4 +58,43 @@ class EvolutionStep:
         except (ImportError, OSError, ValueError) as e:
             logger.warning("Evolution step error: %s", e)
 
+
+        # --- Over-generalization detection ---
+        self._run_splitting_analysis(ctx)
+
         return ctx
+
+    def _run_splitting_analysis(self, ctx: PipelineContext) -> None:
+        """Analyze each agent for over-generalization and propose splits."""
+        if not ctx.agent_results:
+            return
+
+        try:
+            from opensepia.evolution.splitting import AgentSplitter
+            from opensepia.evolution.memory import AgentMemory
+
+            splitter = AgentSplitter(ctx.board_dir)
+            memory = AgentMemory(ctx.board_dir)
+
+            for result in ctx.agent_results:
+                agent_id = result.get("agent_id") or result.get("agent_name")
+                if not agent_id:
+                    continue
+
+                memory_content = memory.load(agent_id)
+                proposal = splitter.analyze_generalization(
+                    agent_id, memory_content, [result]
+                )
+
+                if proposal is not None:
+                    path = splitter.propose_split(
+                        proposal, ctx.sprint_num, ctx.cycle_num
+                    )
+                    log.step_detail(
+                        "evolution",
+                        f"Split proposal created for {agent_id}: {path.name}",
+                    )
+
+        except (ImportError, OSError, ValueError) as e:
+            logger.warning("Splitting analysis error: %s", e)
+
