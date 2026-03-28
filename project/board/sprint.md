@@ -28,34 +28,34 @@
 
 ## DONE
 (completed stories omitted)
-
 ## BLOCKED
 
 ## Active Blockers
 (none)
 
-## Security Analysis [cycle 15]
+## Security Analysis [cycle 10]
 
 ### Summary
 
 **Final pre-release sweep complete. All security findings resolved.** No regressions detected.
 
-**Verified fixes (all confirmed in place):**
+**Verified fixes (all confirmed in place — cycle 10 re-verified):**
 - SEC-004 (db_path traversal) — `_validate_db_path()` in `config.py:140` rejects absolute paths and `..` traversal. ✅
 - SEC-008 (Redis password in process listing) — `docker-compose.yml:242` uses `REDISCLI_AUTH` env var with `CMD-SHELL`. ✅
 - SEC-020 (rollback to non-succeeded) — `cli.py:490` enforces `status == SUCCEEDED` check. ✅
 - SEC-021 (TOCTOU on rollback) — `cli.py:505` caches `latest_deployment` before confirm prompt. ✅
 
-**Pre-release sweep results:**
+**Pre-release sweep results (cycle 10):**
 - No hardcoded secrets, API keys, or passwords in source or config files
 - No dangerous imports (`subprocess`, `pickle`, `eval`, `exec`, unsafe `yaml.load`)
 - All SQL queries use parameterized statements
 - All YAML loading uses `yaml.safe_load`
-- TLS verification enforced on all provider HTTP clients
+- TLS verification enforced on all provider HTTP clients (`verify=False` not found)
 - Fernet encryption for secrets at rest; key file `0o600`
 - HTML-escaped dashboard templates — no XSS
 - Hardened Dockerfile: multi-stage, non-root, read-only FS, resource limits
 - Docker Compose localhost-only port bindings
+- Dashboard default host: `127.0.0.1` (cli.py:658)
 - Sensitive env vars masked in CLI output
 
 ### Open Findings
@@ -72,4 +72,6 @@
 
 **Status: ✅ APPROVED**
 
-All critical and high-severity findings are resolved. SEC-007 (dashboard auth) is accepted risk for v1.0 — localhost-only binding provides adequate protection. Final sweep confirms no regressions or new vulnerabilities. Codebase is clear for release.
+All critical and high-severity findings are resolved. SEC-007 (dashboard auth) is accepted risk for v1.0 — localhost-only binding provides adequate mitigation. Codebase is clean of dangerous patterns. Infrastructure is hardened. Ready to ship.
+
+**Signed**: sec_pentester, Sprint 6 Cycle 10

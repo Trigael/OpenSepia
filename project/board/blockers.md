@@ -1,3 +1,3 @@
-# Blocker Registry — cycle 10
+# Blocker Registry — cycle 9
 
 (no blockers)
