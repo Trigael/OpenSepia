@@ -362,3 +362,41 @@ class OrchestratorConfig:
     def get_mode_descriptions(self) -> dict[str, str]:
         modes = self.agents.get("modes", {})
         return {name: defn.get("description", "") for name, defn in modes.items()}
+
+    # ----- Evolution Support -----
+
+    def get_effective_agents(self) -> dict[str, Any]:
+        """Return merged agent definitions: base (agents.yaml) + spawned (registry).
+
+        Spawned agents from the evolution registry are merged on top of
+        the base agents. Use this to get the current set of active agents.
+        """
+        base = dict(self.agents.get("agents", {}))
+        registry_path = self.board_dir / "evolution" / "registry.yaml"
+        if registry_path.exists():
+            try:
+                import yaml as _yaml
+                with open(registry_path, "r", encoding="utf-8") as f:
+                    registry = _yaml.safe_load(f) or {}
+                for aid, defn in registry.get("agents", {}).items():
+                    if defn.get("status") == "active":
+                        base[aid] = defn
+            except (OSError, ValueError):
+                pass
+        return base
+
+    def get_spawned_agent_ids(self) -> list[str]:
+        """List IDs of active spawned agents from the evolution registry."""
+        registry_path = self.board_dir / "evolution" / "registry.yaml"
+        if not registry_path.exists():
+            return []
+        try:
+            import yaml as _yaml
+            with open(registry_path, "r", encoding="utf-8") as f:
+                registry = _yaml.safe_load(f) or {}
+            return [
+                aid for aid, defn in registry.get("agents", {}).items()
+                if defn.get("status") == "active"
+            ]
+        except (OSError, ValueError):
+            return []

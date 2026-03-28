@@ -411,12 +411,12 @@ class TestPipelineExpansionChaos:
     """Chaos tests for build_pipeline."""
 
     def test_empty_agent_ids(self):
-        """18. Empty agent_ids — agent_runner expands to just init_standup."""
+        """18. Empty agent_ids — agent_runner expands to init_standup + evolution."""
         config = _minimal_config(["agent_runner"])
         pipeline = build_pipeline(config, agent_ids=[])
 
         step_names = [s.name for s in pipeline.steps]
-        assert step_names == ["init_standup"]
+        assert step_names == ["init_standup", "evolution"]
 
     def test_empty_pipeline_yaml(self):
         """19. Pipeline YAML is an empty list — no steps at all."""
@@ -501,7 +501,7 @@ class TestPipelineExpansionChaos:
         pipeline = build_pipeline(config, agent_ids=None)
 
         step_names = [s.name for s in pipeline.steps]
-        assert step_names == ["init_standup"]
+        assert step_names == ["init_standup", "evolution"]
 
     def test_no_config_uses_defaults(self):
         """No agents_config uses DEFAULT_PIPELINE."""

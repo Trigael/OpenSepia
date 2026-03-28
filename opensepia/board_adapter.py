@@ -35,6 +35,10 @@ class AgentContext:
     provider_comments: str
     sprint_num: int
     cycle_num: int
+    # Evolution fields (empty strings when evolution is disabled)
+    agent_memory: str = ""
+    relevant_skills: str = ""
+    lineage_context: str = ""
 
 
 class BoardAdapter(ABC):

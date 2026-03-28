@@ -90,6 +90,11 @@ class MarkdownBoardAdapter(BoardAdapter):
         # Provider comments (optional)
         provider_comments = self._fetch_provider_comments()
 
+        # Evolution data (if evolution directory exists)
+        agent_memory, relevant_skills, lineage_context = self._load_evolution(
+            agent_id, sprint_md, inbox,
+        )
+
         return AgentContext(
             project_description=project_md,
             sprint_md=sprint_md,
@@ -100,6 +105,9 @@ class MarkdownBoardAdapter(BoardAdapter):
             provider_comments=provider_comments,
             sprint_num=sprint_cfg.get("current_sprint", 1),
             cycle_num=sprint_cfg.get("current_cycle", 0),
+            agent_memory=agent_memory,
+            relevant_skills=relevant_skills,
+            lineage_context=lineage_context,
         )
 
     def _fetch_provider_comments(self) -> str:
@@ -123,6 +131,53 @@ class MarkdownBoardAdapter(BoardAdapter):
             logger.debug("Provider comments unavailable: %s", e)
         return ""
 
+    def _load_evolution(
+        self, agent_id: str, sprint_md: str, inbox: str,
+    ) -> tuple[str, str, str]:
+        """Load evolution data if the evolution directory exists.
+
+        Returns (agent_memory, relevant_skills, lineage_context).
+        """
+        evo_dir = self.board_dir / "evolution"
+        if not evo_dir.exists():
+            return "", "", ""
+
+        agent_memory = ""
+        relevant_skills = ""
+        lineage_context = ""
+
+        try:
+            from opensepia.evolution.memory import AgentMemory
+            mem = AgentMemory(self.board_dir)
+            agent_memory = mem.get_context_snippet(agent_id)
+        except (ImportError, OSError) as e:
+            logger.debug("Evolution memory unavailable: %s", e)
+
+        try:
+            from opensepia.evolution.skills import SkillStore, extract_keywords
+            store = SkillStore(self.board_dir)
+            keywords = extract_keywords(sprint_md + " " + inbox)
+            relevant_skills = store.load_relevant_skills(agent_id, keywords)
+        except (ImportError, OSError) as e:
+            logger.debug("Evolution skills unavailable: %s", e)
+
+        try:
+            lineage_path = evo_dir / "lineage" / "lineage.yaml"
+            if lineage_path.exists():
+                import yaml
+                lineage = yaml.safe_load(lineage_path.read_text(encoding="utf-8")) or {}
+                agent_info = lineage.get("agents", {}).get(agent_id, {})
+                if agent_info.get("type") == "spawned":
+                    parent = agent_info.get("parent", "unknown")
+                    lineage_context = (
+                        f"You were spawned from {parent}. "
+                        f"Ancestors: {agent_info.get('lineage', [parent])}"
+                    )
+        except (ImportError, OSError) as e:
+            logger.debug("Evolution lineage unavailable: %s", e)
+
+        return agent_memory, relevant_skills, lineage_context
+
     # ----- Agent output -----
 
     def apply_agent_output(self, agent_id: str, files: list[ParsedFile], agents_config: dict) -> int:
@@ -132,6 +187,12 @@ class MarkdownBoardAdapter(BoardAdapter):
 
         for pf in files:
             if not pf.path or not pf.content:
+                continue
+
+            # Evolution file routing with guardrails
+            if "board/evolution/" in pf.path:
+                if self._apply_evolution_output(agent_id, pf):
+                    written += 1
                 continue
 
             # Security: resolve path and check it's under project_dir
@@ -151,6 +212,71 @@ class MarkdownBoardAdapter(BoardAdapter):
             written += 1
 
         return written
+
+    def _apply_evolution_output(self, agent_id: str, pf: ParsedFile) -> bool:
+        """Route evolution file writes through guardrails. Returns True if written."""
+        try:
+            from opensepia.evolution.guardrails import validate_file_path, validate_memory_entry, validate_skill
+
+            # Validate path
+            path_result = validate_file_path(agent_id, pf.path)
+            if not path_result.valid:
+                logger.warning("EVOLUTION: %s blocked: %s", agent_id, path_result.errors)
+                return False
+
+            # Memory writes
+            if "/memory/" in pf.path:
+                from opensepia.evolution.memory import AgentMemory
+                mem = AgentMemory(self.board_dir)
+                existing_size = len(mem.load(agent_id))
+                val = validate_memory_entry(agent_id, pf.content, existing_size)
+                if not val.valid:
+                    logger.warning("EVOLUTION: %s memory blocked: %s", agent_id, val.errors)
+                    return False
+                # Write directly (append)
+                mem.ensure_dir()
+                path = mem.memory_dir / f"{agent_id}.md"
+                existing = mem.load(agent_id)
+                if existing and not existing.endswith("\n"):
+                    existing += "\n"
+                path.write_text(existing + pf.content + "\n", encoding="utf-8")
+                logger.info("EVOLUTION: %s memory updated (%d chars)", agent_id, len(pf.content))
+                return True
+
+            # Skill writes
+            if "/skills/" in pf.path:
+                val = validate_skill(pf.content)
+                if not val.valid:
+                    logger.warning("EVOLUTION: %s skill blocked: %s", agent_id, val.errors)
+                    return False
+                full_path = (self.project_dir / pf.path).resolve()
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                full_path.write_text(pf.content, encoding="utf-8")
+                logger.info("EVOLUTION: %s saved skill to %s", agent_id, pf.path)
+                return True
+
+            # Proposal writes (force to pending/)
+            if "/proposals/" in pf.path:
+                proposals_dir = self.board_dir / "evolution" / "proposals" / "pending"
+                proposals_dir.mkdir(parents=True, exist_ok=True)
+                filename = Path(pf.path).name
+                target = proposals_dir / filename
+                target.write_text(pf.content, encoding="utf-8")
+                logger.info("EVOLUTION: %s created proposal %s", agent_id, filename)
+                return True
+
+            # Default: write to disk (other evolution files)
+            full_path = (self.project_dir / pf.path).resolve()
+            resolved_base = self.project_dir.resolve()
+            if not str(full_path).startswith(str(resolved_base)):
+                return False
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+            full_path.write_text(pf.content, encoding="utf-8")
+            return True
+
+        except (ImportError, OSError) as e:
+            logger.warning("EVOLUTION: %s write error: %s", agent_id, e)
+            return False
 
     # ----- Inbox -----
 

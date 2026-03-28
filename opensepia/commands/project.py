@@ -30,6 +30,14 @@ def cmd_init(argv: list[str]) -> None:
     # Create directories
     for d in ["inbox", "archive", ".snapshot"]:
         (board_dir / d).mkdir(parents=True, exist_ok=True)
+    # Evolution directories
+    for d in [
+        "evolution/memory", "evolution/skills/_global", "evolution/skills/_project",
+        "evolution/prompts", "evolution/lineage",
+        "evolution/proposals/pending", "evolution/proposals/approved",
+        "evolution/proposals/rejected",
+    ]:
+        (board_dir / d).mkdir(parents=True, exist_ok=True)
     for d in ["src", "tests", "docs", "config"]:
         (workspace_dir / d).mkdir(parents=True, exist_ok=True)
 

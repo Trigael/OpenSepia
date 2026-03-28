@@ -22,6 +22,7 @@ from opensepia.steps.git_sync import GitSyncStep
 from opensepia.steps.board_sync import BoardSyncStep
 from opensepia.steps.logging_step import CycleLogStep
 from opensepia.steps.alerting import AlertingStep
+from opensepia.steps.evolution_step import EvolutionStep
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ def build_pipeline(agents_config: dict | None = None, agent_ids: list[str] | Non
                 steps.append(AgentStep(aid))
                 steps.append(AgentCommitStep(aid))
                 steps.append(AgentSyncStep(aid))
+            steps.append(EvolutionStep())
             continue
 
         # Parameterized step: "run_agent:dev1"
