@@ -27,7 +27,6 @@
 ## TESTING
 
 ## DONE
-
 (completed stories omitted)
 
 ## BLOCKED
@@ -35,24 +34,24 @@
 ## Active Blockers
 (none)
 
-## Security Analysis [cycle 14]
+## Security Analysis [cycle 15]
 
 ### Summary
 
-**All security findings resolved.** SEC-008 fix verified — `docker-compose.yml:242` now reads `["CMD-SHELL", "REDISCLI_AUTH=$REDIS_PASSWORD redis-cli ping"]`. The Redis password is no longer exposed in process listings.
+**Final pre-release sweep complete. All security findings resolved.** No regressions detected.
 
-**Verified fixes (all in place):**
+**Verified fixes (all confirmed in place):**
 - SEC-004 (db_path traversal) — `_validate_db_path()` in `config.py:140` rejects absolute paths and `..` traversal. ✅
-- SEC-008 (Redis password in process listing) — `docker-compose.yml:242` uses `REDISCLI_AUTH` env var with `CMD-SHELL`. ✅ **FIX VERIFIED**
+- SEC-008 (Redis password in process listing) — `docker-compose.yml:242` uses `REDISCLI_AUTH` env var with `CMD-SHELL`. ✅
 - SEC-020 (rollback to non-succeeded) — `cli.py:490` enforces `status == SUCCEEDED` check. ✅
 - SEC-021 (TOCTOU on rollback) — `cli.py:505` caches `latest_deployment` before confirm prompt. ✅
 
-**Security posture (unchanged):**
-- Parameterized SQL everywhere — no injection vectors
-- `yaml.safe_load` only — no deserialization risk
-- Strict input validation via regex in `validation.py`
-- TLS verification enforced (`verify=True`) on all provider HTTP clients
-- Fail-closed credential loading from env vars
+**Pre-release sweep results:**
+- No hardcoded secrets, API keys, or passwords in source or config files
+- No dangerous imports (`subprocess`, `pickle`, `eval`, `exec`, unsafe `yaml.load`)
+- All SQL queries use parameterized statements
+- All YAML loading uses `yaml.safe_load`
+- TLS verification enforced on all provider HTTP clients
 - Fernet encryption for secrets at rest; key file `0o600`
 - HTML-escaped dashboard templates — no XSS
 - Hardened Dockerfile: multi-stage, non-root, read-only FS, resource limits
@@ -67,12 +66,10 @@
 **File**: src/clouddeploy/dashboard/app.py:32-176
 **Description**: All dashboard endpoints are publicly accessible with zero authentication.
 **Impact**: Information disclosure to anyone who can reach the server.
-**Mitigation**: Default `--host 127.0.0.1` and docker-compose `127.0.0.1:8090` binding limit exposure to localhost. Acceptable for v1.0 — track as post-release hardening item.
+**Mitigation**: Default `--host 127.0.0.1` and docker-compose `127.0.0.1:8090` binding limit exposure to localhost. Accepted risk for v1.0 — track as post-release hardening item.
 
 ### v1.0 Security Sign-Off
 
 **Status: ✅ APPROVED**
 
-All critical and high-severity findings are resolved. SEC-007 (dashboard auth) is accepted risk for v1.0 — localhost-only binding limits exposure. Recommend tracking as post-release hardening.
-
-**Signed off by**: sec_pentester, Sprint 6 Cycle 14
+All critical and high-severity findings are resolved. SEC-007 (dashboard auth) is accepted risk for v1.0 — localhost-only binding provides adequate protection. Final sweep confirms no regressions or new vulnerabilities. Codebase is clear for release.
