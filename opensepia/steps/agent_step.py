@@ -73,6 +73,19 @@ class AgentStep:
         agent_name = agent_cfg["name"]
         agent_color = agent_cfg["color"]
 
+        # Skip agent if they have no work this cycle
+        if not ctx.dry_run:
+            try:
+                from opensepia.work_detection import agent_has_work
+                sprint_text = adapter.get_sprint_text()
+                inbox_text = adapter.get_inbox(agent_id)
+                if not agent_has_work(agent_id, sprint_text, inbox_text):
+                    log.step_detail(self._name, f"{agent_name} — no work, skipping")
+                    logger.info("Agent %s skipped: no work detected", agent_id)
+                    return ctx
+            except (ImportError, OSError) as e:
+                logger.debug("Work detection unavailable: %s", e)
+
         if ctx.dry_run:
             agent_ctx = adapter.get_agent_context(agent_id, ctx.agents_config, ctx.project_config)
             context = build_agent_context_from_adapter(agent_id, ctx.agents_config, agent_ctx)

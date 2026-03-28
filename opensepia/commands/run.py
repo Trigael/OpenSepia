@@ -23,6 +23,7 @@ from opensepia.steps.board_sync import BoardSyncStep
 from opensepia.steps.logging_step import CycleLogStep
 from opensepia.steps.alerting import AlertingStep
 from opensepia.steps.evolution_step import EvolutionStep
+from opensepia.steps.stuck_detection_step import StuckDetectionStep
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ def build_pipeline(agents_config: dict | None = None, agent_ids: list[str] | Non
         # Special case: agent_runner expands to per-agent steps
         if name == "agent_runner":
             steps.append(InitStandupStep())
+            steps.append(StuckDetectionStep())
             for aid in agent_ids:
                 steps.append(AgentStep(aid))
                 steps.append(AgentCommitStep(aid))

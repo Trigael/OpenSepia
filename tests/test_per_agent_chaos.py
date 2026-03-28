@@ -416,7 +416,7 @@ class TestPipelineExpansionChaos:
         pipeline = build_pipeline(config, agent_ids=[])
 
         step_names = [s.name for s in pipeline.steps]
-        assert step_names == ["init_standup", "evolution"]
+        assert step_names == ["init_standup", "stuck_detection", "evolution"]
 
     def test_empty_pipeline_yaml(self):
         """19. Pipeline YAML is an empty list — no steps at all."""
@@ -501,7 +501,7 @@ class TestPipelineExpansionChaos:
         pipeline = build_pipeline(config, agent_ids=None)
 
         step_names = [s.name for s in pipeline.steps]
-        assert step_names == ["init_standup", "evolution"]
+        assert step_names == ["init_standup", "stuck_detection", "evolution"]
 
     def test_no_config_uses_defaults(self):
         """No agents_config uses DEFAULT_PIPELINE."""
@@ -537,6 +537,15 @@ class TestIntegrationChaos:
     def test_one_agent_fails_others_succeed(self, tmp_path):
         """25. One agent fails, others succeed — all non-critical, pipeline continues."""
         ctx, _, _, _ = _create_test_env(tmp_path)
+        # Seed work for all three agents so work detection doesn't skip them
+        sprint = (
+            "# Sprint 1\n\n## TODO\n- [ ] STORY-001: Login (dev1)\n"
+            "\n## TESTING\n- [ ] STORY-002: Feature (tester)\n\n## DONE\n"
+        )
+        (tmp_path / "board" / "sprint.md").write_text(sprint, encoding="utf-8")
+        # Also seed inbox messages as guaranteed work signals
+        (tmp_path / "board" / "inbox" / "dev1.md").write_text("## PM: Please start STORY-001\n")
+        (tmp_path / "board" / "inbox" / "tester.md").write_text("## PM: Please test STORY-002\n")
 
         good_result = _mock_agent_result("po", response=MOCK_RESPONSE)
         tester_result = _mock_agent_result("tester", response="Looks good, no files.")
