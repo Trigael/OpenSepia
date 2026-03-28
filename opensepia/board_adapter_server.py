@@ -106,6 +106,7 @@ class BoardServerAdapter(BoardAdapter):
             inbox=inbox,
             workspace_tree=workspace_tree,
             provider_comments="",  # Board server IS the provider
+            blockers_md="",  # Board server tracks blockers separately
             sprint_num=sprint_num,
             cycle_num=cycle_num,
         )

@@ -33,6 +33,7 @@ class AgentContext:
     inbox: str
     workspace_tree: str
     provider_comments: str
+    blockers_md: str
     sprint_num: int
     cycle_num: int
     # Evolution fields (empty strings when evolution is disabled)

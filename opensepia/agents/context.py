@@ -139,7 +139,7 @@ Time: {now} | Sprint: {ac.sprint_num} | Cycle: {ac.cycle_num}
 ## Sprint (active stories)
 {sprint_md if sprint_md else "(none)"}
 
-## Backlog (truncated)
+{ac.blockers_md if agent_id in ("pm", "po") and ac.blockers_md else ""}## Backlog (truncated)
 {backlog_md if backlog_md else "(empty)"}
 
 ## Standup (current cycle)
