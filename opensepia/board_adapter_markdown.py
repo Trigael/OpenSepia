@@ -21,6 +21,7 @@ from opensepia.agents.workspace import get_workspace_tree
 from opensepia.blockers import extract_blockers, format_blockers_for_context, update_blocker_registry
 from opensepia.review_gate import check_review_evidence, get_reviewer_for_story
 from opensepia.config import MAX_STANDUP_CHARS, MAX_INBOX_CHARS
+from opensepia.quality_gates import check_definition_of_done
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +191,7 @@ class MarkdownBoardAdapter(BoardAdapter):
     # ----- Agent output -----
 
     def apply_agent_output(self, agent_id: str, files: list[ParsedFile], agents_config: dict) -> int:
-        """Write parsed files to disk with security checks."""
+        """Write parsed files to disk with security checks and quality gates."""
         written = 0
         resolved_base = self.project_dir.resolve()
 
@@ -214,14 +215,21 @@ class MarkdownBoardAdapter(BoardAdapter):
             if pf.path.rstrip("/").endswith("sprint.md"):
                 old_content = self._read(full_path)
                 pf = self._enforce_review_gate(pf, old_content, agent_id)
+            content_to_write = pf.content
+
+            # Quality gate: check Definition of Done for sprint.md DONE transitions
+            if full_path.name == "sprint.md":
+                content_to_write = self._enforce_done_gate(
+                    agent_id, pf.content,
+                )
 
             if pf.action == "append":
                 existing = self._read(full_path)
                 full_path.parent.mkdir(parents=True, exist_ok=True)
-                full_path.write_text(existing + "\n" + pf.content, encoding="utf-8")
+                full_path.write_text(existing + "\n" + content_to_write, encoding="utf-8")
             else:
                 full_path.parent.mkdir(parents=True, exist_ok=True)
-                full_path.write_text(pf.content, encoding="utf-8")
+                full_path.write_text(content_to_write, encoding="utf-8")
 
             written += 1
 
@@ -393,6 +401,137 @@ class MarkdownBoardAdapter(BoardAdapter):
             output.extend(removed_lines)
 
         return "\n".join(output)
+    # ----- Quality gates -----
+
+    def _enforce_done_gate(self, agent_id: str, new_sprint_text: str) -> str:
+        """Check stories moving to DONE against Definition of Done.
+
+        Compares old sprint.md with the proposed new content to find
+        stories newly appearing in the DONE section. For each, looks up
+        acceptance criteria in backlog.md and runs the DoD check.
+
+        Returns (possibly modified) sprint text with blocked stories
+        reverted to REVIEW.
+        """
+        old_sprint = self._read(self.board_dir / "sprint.md")
+        old_done_ids = self._extract_done_ids(old_sprint)
+        new_done_ids = self._extract_done_ids(new_sprint_text)
+
+        # Stories newly moving to DONE
+        newly_done = new_done_ids - old_done_ids
+        if not newly_done:
+            return new_sprint_text
+
+        backlog_text = self._read(self.board_dir / "backlog.md")
+        blocked_stories: dict[str, list[str]] = {}
+
+        for story_id in newly_done:
+            story_section = self._extract_story_from_backlog(story_id, backlog_text)
+            passed, unchecked = check_definition_of_done(story_section)
+            if not passed:
+                blocked_stories[story_id] = unchecked
+                logger.warning(
+                    "DoD gate blocked %s from DONE (%s): %d unchecked criteria",
+                    story_id, agent_id, len(unchecked),
+                )
+
+        if not blocked_stories:
+            return new_sprint_text
+
+        # Revert blocked stories: move from DONE to REVIEW in the sprint text
+        modified = self._revert_stories_to_review(new_sprint_text, blocked_stories.keys())
+
+        # Notify PO about each blocked story
+        for story_id, unchecked in blocked_stories.items():
+            criteria_list = "\n".join(f"- [ ] {c}" for c in unchecked)
+            msg = (
+                f"**{story_id}** was blocked from DONE by the Definition of Done gate.\n\n"
+                f"Unchecked acceptance criteria:\n{criteria_list}\n\n"
+                f"The story has been reverted to REVIEW."
+            )
+            self.send_inbox_message("po", "quality-gate", msg)
+
+        return modified
+
+    @staticmethod
+    def _extract_done_ids(sprint_text: str) -> set[str]:
+        """Return story/bug IDs listed under a ## DONE section."""
+        ids: set[str] = set()
+        in_done = False
+        for line in sprint_text.split("\n"):
+            stripped = line.strip().lower()
+            if stripped.startswith("## "):
+                in_done = stripped[3:].strip() == "done"
+            elif in_done:
+                ids.update(STORY_BUG_ID_RE.findall(line))
+        return ids
+
+    @staticmethod
+    def _extract_story_from_backlog(story_id: str, backlog_text: str) -> str:
+        """Extract the section for a given story ID from backlog.md.
+
+        Looks for a heading containing the story ID and captures everything
+        until the next heading of equal or higher level.
+        """
+        pattern = re.compile(
+            rf"^(#{{2,}})\s+.*{re.escape(story_id)}.*$",
+            re.MULTILINE,
+        )
+        match = pattern.search(backlog_text)
+        if not match:
+            return ""
+
+        level = len(match.group(1))
+        start = match.start()
+        # Find end: next heading of same or higher level
+        rest = backlog_text[match.end():]
+        end_pattern = re.compile(rf"^#{{{1},{level}}}\s", re.MULTILINE)
+        end_match = end_pattern.search(rest)
+        if end_match:
+            return backlog_text[start:match.end() + end_match.start()].strip()
+        return backlog_text[start:].strip()
+
+    @staticmethod
+    def _revert_stories_to_review(sprint_text: str, story_ids) -> str:
+        """Move specified story IDs from DONE back to REVIEW in sprint text."""
+        lines = sprint_text.split("\n")
+        in_done = False
+        review_idx = None
+        blocked_lines: list[str] = []
+        result_lines: list[str] = []
+
+        for line in lines:
+            stripped = line.strip().lower()
+            if stripped.startswith("## "):
+                section = stripped[3:].strip()
+                if section == "review":
+                    review_idx = len(result_lines)
+                in_done = section == "done"
+
+            # Check if this line contains a blocked story in the DONE section
+            if in_done and any(sid in line for sid in story_ids):
+                blocked_lines.append(line)
+                continue
+
+            result_lines.append(line)
+
+        # Insert blocked lines after the REVIEW header
+        if review_idx is not None and blocked_lines:
+            for i, bl in enumerate(blocked_lines):
+                result_lines.insert(review_idx + 1 + i, bl)
+        elif blocked_lines:
+            # No REVIEW section exists — create one before DONE
+            done_idx = None
+            for i, line in enumerate(result_lines):
+                if line.strip().lower().startswith("## done"):
+                    done_idx = i
+                    break
+            if done_idx is not None:
+                insert = ["## REVIEW"] + blocked_lines + [""]
+                for j, il in enumerate(insert):
+                    result_lines.insert(done_idx + j, il)
+
+        return "\n".join(result_lines)
 
     # ----- Inbox -----
 
