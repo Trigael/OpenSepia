@@ -550,3 +550,19 @@ agents:
       - Tested areas
       - Findings with PoC
       - Verified fixes
+
+# =============================================================================
+# EVOLUTION — controls agent self-modification capabilities
+# =============================================================================
+evolution:
+  enabled: false
+  auto_approve:
+    memory: true
+    skills: true
+    prompts: false
+    spawning: false
+    splitting: false
+  limits:
+    max_agents: 20
+    max_prompt_length: 8000
+    max_memory_length: 10000
