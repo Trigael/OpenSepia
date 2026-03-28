@@ -70,16 +70,16 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-008: Environment management (dev/staging/prod)
 **Priority**: HIGH
 **Assigned**: dev2
-**Status**: TODO
+**Status**: DONE
 
 **As a** user **I want** to manage multiple deployment environments **so that** I can promote builds from dev → staging → prod
 
 **Acceptance criteria**:
-- [ ] `clouddeploy env list` shows configured environments
-- [ ] `clouddeploy env show <name>` shows environment details
-- [ ] `clouddeploy env create <name>` creates new environment config
-- [ ] Each environment has: provider, region, replicas, env vars, resource limits
-- [ ] Environment configs stored in `config/environments/`
+- [x] `clouddeploy env list` shows configured environments
+- [x] `clouddeploy env show <name>` shows environment details
+- [x] `clouddeploy env create <name>` creates new environment config
+- [x] Each environment has: provider, region, replicas, env vars, resource limits
+- [x] Environment configs stored in `config/environments/`
 
 ### STORY-009: Deployment state tracking with SQLite
 **Priority**: HIGH
@@ -126,16 +126,83 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 
 ### STORY-011: Rollback support
 **Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
+**Assigned**: dev1
+**Status**: DONE
 
 **As a** user **I want** to rollback to a previous deployment **so that** I can recover from bad deploys quickly
 
 **Acceptance criteria**:
-- [ ] `clouddeploy rollback <env>` rolls back to previous deployment
-- [ ] `clouddeploy rollback <env> --to <deployment_id>` targets specific version
-- [ ] Rollback creates a new deployment record (not delete)
-- [ ] Confirmation prompt before rollback to prod
+- [x] `clouddeploy rollback <env>` rolls back to previous deployment
+- [x] `clouddeploy rollback <env> --to <deployment_id>` targets specific version
+- [x] Rollback creates a new deployment record (not delete)
+- [x] Confirmation prompt before rollback to prod
+
+### STORY-014: Web dashboard — deployment overview
+**Priority**: MEDIUM
+**Assigned**: dev1
+**Status**: DONE
+
+**As a** user **I want** a web dashboard **so that** I can monitor deployments visually
+
+**Acceptance criteria**:
+- [x] Local web server (Flask or FastAPI)
+- [x] Dashboard showing deployment history per environment
+- [x] Real-time status updates
+- [x] Health check visualization
+
+### STORY-015: Azure Container Apps provider
+**Priority**: MEDIUM
+**Assigned**: dev2
+**Status**: DONE
+
+**As a** user **I want** to deploy to Azure Container Apps **so that** I can use Azure infrastructure
+
+**Acceptance criteria**:
+- [x] Azure provider in `src/providers/azure_container_apps.py`
+- [x] Container app creation and update
+- [x] Revision management
+- [x] Ingress configuration
+
+### STORY-017: Deployment dry-run mode
+**Priority**: MEDIUM
+**Assigned**: dev2
+**Status**: DONE
+
+**As a** user **I want** `clouddeploy deploy --dry-run` **so that** I can preview what a deployment would do without actually executing it
+
+**Acceptance criteria**:
+- [x] `--dry-run` flag on `clouddeploy deploy` command
+- [x] Dry-run validates config, resolves provider, and prints planned actions
+- [x] No API calls made to cloud providers during dry-run
+- [x] Output shows: image to deploy, target environment, provider config, and estimated changes
+
+### STORY-018: Secrets management integration
+**Priority**: MEDIUM
+**Assigned**: dev1
+**Status**: DONE
+
+**As a** user **I want** to manage deployment secrets securely **so that** sensitive values are not stored in plaintext config files
+
+**Acceptance criteria**:
+- [x] `clouddeploy secrets set <env> <key> <value>` stores encrypted secrets
+- [x] `clouddeploy secrets list <env>` shows secret keys (not values)
+- [x] Secrets injected into deployments as environment variables
+- [x] Secrets stored encrypted in local SQLite (using Fernet symmetric encryption)
+- [x] `clouddeploy secrets delete <env> <key>` removes a secret
+
+### STORY-019: Integration test suite
+**Priority**: MEDIUM
+**Assigned**: tester
+**Status**: DONE
+
+**As a** developer **I want** integration tests that exercise full deploy workflows **so that** we catch end-to-end regressions before release
+
+**Acceptance criteria**:
+- [x] Integration test fixtures with mock cloud provider responses
+- [x] Test full deploy → health check → status flow per provider (AWS, GCP, Azure)
+- [x] Test promote workflow: dev → staging → prod
+- [x] Test rollback workflow with deployment state verification
+- [x] Tests run with `pytest tests/integration/ -v`
 
 ## LOW
 
@@ -153,8 +220,45 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 - [x] Tests for SQLite state management
 - [x] Minimum 70% coverage on core modules
 
+### STORY-020: CLI help and documentation improvements
+**Priority**: LOW
+
+**As a** user **I want** clear `--help` text and usage examples on every command **so that** I can use CloudDeploy without reading external docs
+
+**Acceptance criteria**:
+- [ ] Every Click command and subcommand has a descriptive help string
+- [ ] `clouddeploy deploy --help` shows usage examples
+- [ ] `clouddeploy --help` shows grouped commands with descriptions
+- [ ] Add `examples` callback or `--examples` flag showing common workflows
+
 ## DONE
 
 ### STORY-001: Define MVP scope
 **Priority**: HIGH
 **Status**: DONE
+
+### STORY-013: GCP Cloud Run provider
+**Priority**: HIGH
+**Assigned**: dev2
+**Status**: DONE
+
+**As a** user **I want** to deploy to GCP Cloud Run **so that** I have multi-cloud options
+
+**Acceptance criteria**:
+- [x] Cloud Run provider in `src/providers/gcp_cloudrun.py`
+- [x] Service creation and update
+- [x] Traffic splitting support
+- [x] Region configuration
+
+### STORY-016: Deployment promotion workflow
+**Priority**: HIGH
+**Assigned**: dev1
+**Status**: DONE
+
+**As a** user **I want** `clouddeploy promote <env>` **so that** I can promote a deployment from dev → staging → prod in sequence
+
+**Acceptance criteria**:
+- [x] `clouddeploy promote <env>` promotes latest successful deployment to next tier
+- [x] Promotion chain: dev → staging → prod
+- [x] Confirmation prompt for prod promotion
+- [x] Promotion recorded in deployment history

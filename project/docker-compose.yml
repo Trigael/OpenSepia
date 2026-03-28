@@ -1,29 +1,235 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clouddeploy
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8080:8080"
     volumes:
       - app-data:/app/data
+      - secrets-key:/home/appuser/.clouddeploy
+      - ./config:/app/config:ro
     env_file:
       - path: config/.env
         required: false
     environment:
-      - DATABASE_PATH=/app/data/agentboard.db
-      - SNAPSHOT_DIR=/app/data/snapshots
-      - AGENTBOARD_ENV=production
-      - RATE_LIMIT_READ=120
-      - RATE_LIMIT_WRITE=120
-      - MAX_RATE_LIMIT_CLIENTS=10000
-      - DASHBOARD_COOKIE_SECURE=true
-      - ROLLBACK_ELIGIBLE_CYCLES=5
+      - CLOUDDEPLOY_ENV=${CLOUDDEPLOY_ENV:-development}
+      - CLOUDDEPLOY_DB_PATH=/app/data/clouddeploy.db
+      - GCP_ACCESS_TOKEN=${GCP_ACCESS_TOKEN:-}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - AZURE_ACCESS_TOKEN=${AZURE_ACCESS_TOKEN:-}
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
     restart: unless-stopped
-    mem_limit: 512m
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    networks:
+      - clouddeploy-net
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - dev
+      - staging
+      - prod
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clouddeploy-dashboard
+    ports:
+      - "127.0.0.1:8090:8080"
+    volumes:
+      - app-data:/app/data:ro
+      - secrets-key:/home/appuser/.clouddeploy:ro
+      - ./config:/app/config:ro
+    env_file:
+      - path: config/.env
+        required: false
+    environment:
+      - CLOUDDEPLOY_ENV=${CLOUDDEPLOY_ENV:-development}
+      - CLOUDDEPLOY_DB_PATH=/app/data/clouddeploy.db
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - clouddeploy-net
+    depends_on:
+      app:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import http.client; c=http.client.HTTPConnection('localhost',8080,timeout=5); c.request('GET','/api/summary'); exit(0 if c.getresponse().status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    entrypoint: ["clouddeploy", "dashboard", "--host", "0.0.0.0", "--port", "8080"]
+    profiles:
+      - dev
+      - staging
+      - prod
+
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clouddeploy-dev
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - app-data:/app/data
+      - secrets-key:/home/appuser/.clouddeploy
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+    env_file:
+      - path: config/.env
+        required: false
+    environment:
+      - CLOUDDEPLOY_ENV=development
+      - CLOUDDEPLOY_DB_PATH=/app/data/clouddeploy.db
+      - GCP_ACCESS_TOKEN=${GCP_ACCESS_TOKEN:-}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - AZURE_ACCESS_TOKEN=${AZURE_ACCESS_TOKEN:-}
+      - LOG_LEVEL=debug
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - clouddeploy-net
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - dev
+
+  app-staging:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clouddeploy-staging
+    ports:
+      - "127.0.0.1:8081:8080"
+    volumes:
+      - staging-data:/app/data
+      - staging-secrets-key:/home/appuser/.clouddeploy
+      - ./config:/app/config:ro
+    env_file:
+      - path: config/.env
+        required: false
+    environment:
+      - CLOUDDEPLOY_ENV=staging
+      - CLOUDDEPLOY_DB_PATH=/app/data/clouddeploy.db
+      - GCP_ACCESS_TOKEN=${GCP_ACCESS_TOKEN:-}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - AZURE_ACCESS_TOKEN=${AZURE_ACCESS_TOKEN:-}
+      - LOG_LEVEL=info
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - clouddeploy-net
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - staging
+
+  app-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: clouddeploy-prod
+    ports:
+      - "127.0.0.1:8082:8080"
+    volumes:
+      - prod-data:/app/data
+      - prod-secrets-key:/home/appuser/.clouddeploy
+      - ./config:/app/config:ro
+    env_file:
+      - path: config/.env
+        required: false
+    environment:
+      - CLOUDDEPLOY_ENV=production
+      - CLOUDDEPLOY_DB_PATH=/app/data/clouddeploy.db
+      - GCP_ACCESS_TOKEN=${GCP_ACCESS_TOKEN:-}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID:-}
+      - AZURE_ACCESS_TOKEN=${AZURE_ACCESS_TOKEN:-}
+      - LOG_LEVEL=warning
+    read_only: true
+    tmpfs:
+      - /tmp:size=64M
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+    restart: unless-stopped
+    networks:
+      - clouddeploy-net
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - prod
+
+  redis:
+    image: redis:7-alpine
+    container_name: clouddeploy-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=32M
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    restart: unless-stopped
+    networks:
+      - clouddeploy-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 volumes:
   app-data:
+  staging-data:
+  prod-data:
+  redis-data:
+  secrets-key:
+  staging-secrets-key:
+  prod-secrets-key:
+
+networks:
+  clouddeploy-net:
+    driver: bridge
