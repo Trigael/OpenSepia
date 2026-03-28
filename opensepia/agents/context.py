@@ -64,6 +64,14 @@ def build_agent_context_from_adapter(
 
     ac = agent_context
 
+    # Inject immutable confinement laws (always, cannot be removed by evolution)
+    immutable_laws = ""
+    try:
+        from opensepia.evolution.confinement import get_immutable_laws
+        immutable_laws = get_immutable_laws(agent_id, agent.get("name", agent_id))
+    except ImportError:
+        pass
+
     # Use refined prompt if evolution is active
     if ac.agent_memory or ac.relevant_skills or ac.lineage_context:
         try:
@@ -117,7 +125,8 @@ You can record learnings and propose improvements:
 Memory entry format: `- [S{{sprint}}C{{cycle}}] Category: What you learned`
 """
 
-    context = f"""{system_prompt}
+    context = f"""{immutable_laws}
+{system_prompt}
 
 ---
 # CURRENT STATE

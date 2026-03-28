@@ -101,6 +101,13 @@ class AgentStep:
                 logger.info("Agent %s context: %d chars, inbox: %d chars",
                             agent_id, len(context), len(agent_ctx.inbox))
 
+                # Determine per-agent tool restrictions
+                try:
+                    from opensepia.evolution.confinement import build_allowed_tools_for_agent
+                    allowed_tools = build_allowed_tools_for_agent(agent_id, ctx.agents_config)
+                except ImportError:
+                    allowed_tools = "Bash,Edit,Write,Read,Glob,Grep"
+
                 agent_result = invoke_agent(
                     agent_id=agent_id,
                     context=context,
@@ -108,6 +115,7 @@ class AgentStep:
                     agent_name=f"{agent_color} {agent_name}",
                     timeout=timeout,
                     verbose=ctx.verbose,
+                    allowed_tools=allowed_tools,
                 )
 
                 result_dict: dict[str, Any] = {
@@ -297,8 +305,18 @@ class AgentCommitStep:
 
             if branch:
                 log.step_detail(self._name, f"Committed to {branch} as {author_name}")
-                # Return to master
+                # BUG-005 fix: merge story branch into master immediately after
+                # committing so that agent-written files remain visible on disk.
+                # Previously, 'checkout master' removed files that only existed
+                # on the story branch, and _merge_done_stories() only merged
+                # DONE branches — leaving IN_PROGRESS/BLOCKED files invisible.
                 _git(workspace, "checkout", "master")
+                merge_result = _git(workspace, "merge", branch, "--no-ff",
+                                    "-m", f"Merge {branch}: sync to master")
+                if merge_result.returncode != 0:
+                    logger.warning("BUG-005 merge %s to master failed: %s — aborting",
+                                   branch, merge_result.stderr.strip()[:200])
+                    _git(workspace, "merge", "--abort")
             else:
                 log.step_detail(self._name, f"Committed to master as {author_name}")
 

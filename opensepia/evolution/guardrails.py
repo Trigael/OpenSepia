@@ -74,6 +74,15 @@ def validate_prompt(agent_id: str, new_prompt: str, agents_config: dict) -> Vali
         if f"modify {other_id}" in new_prompt.lower() or f"change {other_id}" in new_prompt.lower():
             errors.append(f"Prompt attempts to modify other agent: {other_id}")
 
+    # Check against immutable confinement laws
+    try:
+        from opensepia.evolution.confinement import validate_evolution_against_laws
+        laws_valid, law_errors = validate_evolution_against_laws("prompt_refine", new_prompt, agent_id)
+        if not laws_valid:
+            errors.extend(law_errors)
+    except ImportError:
+        pass
+
     return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings)
 
 

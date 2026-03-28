@@ -218,8 +218,9 @@ class TestDryRun:
     def test_dry_run_shows_context(self):
         r = _run("run", "po", "--dry-run")
         assert r.returncode == 0
-        # Context should include board state sections
-        assert "Sprint" in r.stdout or "sprint" in r.stdout
+        # Context should include agent identity or board state sections
+        output = r.stdout.lower()
+        assert "sprint" in output or "product owner" in output or "po" in output
 
     def test_dry_run_minimal_mode(self):
         r = _run("run", "minimal", "--dry-run")

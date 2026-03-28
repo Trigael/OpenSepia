@@ -1,8 +1,14 @@
 """
 AI Dev Team — Claude Code CLI invocation with retry logic.
+
+Enforces agent confinement:
+- Per-agent tool restrictions (PO/PM can't run Bash)
+- Process group cleanup on timeout (kills orphaned children)
+- Working directory locked to project_dir
 """
 
 import os
+import signal
 import logging
 import subprocess
 from dataclasses import dataclass, field
@@ -18,6 +24,9 @@ logger = logging.getLogger(__name__)
 AGENT_TIMEOUT_SECONDS = DEFAULT_EXECUTION["timeout"]
 DEFAULT_MAX_RETRIES = DEFAULT_EXECUTION["max_retries"]
 DEFAULT_RETRY_DELAY = DEFAULT_EXECUTION["retry_delay"]
+
+# Default tools (backward compatible)
+DEFAULT_ALLOWED_TOOLS = "Bash,Edit,Write,Read,Glob,Grep"
 
 
 @dataclass
@@ -38,14 +47,16 @@ def call_claude_code(
     base_dir: Path,
     timeout: int = AGENT_TIMEOUT_SECONDS,
     verbose: bool = False,
+    allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
 ) -> str:
     """Call Claude Code CLI with a prompt.
 
     Args:
         prompt: Full prompt text to send via stdin.
-        base_dir: Working directory for the CLI.
+        base_dir: Working directory for the CLI (locked to project).
         timeout: Timeout in seconds.
         verbose: Print progress to stdout.
+        allowed_tools: Comma-separated list of allowed tools.
 
     Returns:
         Response text from Claude CLI.
@@ -58,7 +69,7 @@ def call_claude_code(
     cmd = [
         "claude",
         "--print",
-        "--allowedTools", "Bash,Edit,Write,Read,Glob,Grep",
+        "--allowedTools", allowed_tools,
     ]
 
     if verbose:
@@ -68,20 +79,34 @@ def call_claude_code(
     env = os.environ.copy()
     env.pop("CLAUDECODE", None)
 
-    result = subprocess.run(
+    # Start in new process group so we can kill the entire tree on timeout
+    proc = subprocess.Popen(
         cmd,
-        input=prompt,
-        capture_output=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
         cwd=str(base_dir),
         env=env,
+        start_new_session=True,  # New process group for clean kill
     )
 
-    if result.returncode != 0:
-        raise RuntimeError(f"Claude Code CLI error (exit {result.returncode}): {result.stderr}")
+    try:
+        stdout, stderr = proc.communicate(input=prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        # Kill entire process group (including child pytest, bash, etc.)
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        except (ProcessLookupError, OSError):
+            pass
+        proc.kill()
+        proc.wait()
+        raise
 
-    return result.stdout
+    if proc.returncode != 0:
+        raise RuntimeError(f"Claude Code CLI error (exit {proc.returncode}): {stderr}")
+
+    return stdout
 
 
 def invoke_agent(
@@ -91,6 +116,7 @@ def invoke_agent(
     agent_name: str = "",
     timeout: int = AGENT_TIMEOUT_SECONDS,
     verbose: bool = False,
+    allowed_tools: str = DEFAULT_ALLOWED_TOOLS,
 ) -> AgentResult:
     """Invoke Claude Code CLI for a single agent (no retry).
 
@@ -101,6 +127,7 @@ def invoke_agent(
         agent_name: Human-readable agent name.
         timeout: Timeout in seconds.
         verbose: Print progress.
+        allowed_tools: Comma-separated list of allowed tools.
 
     Returns:
         AgentResult with response or error.
@@ -112,7 +139,10 @@ def invoke_agent(
         log.detail(f"Context: {len(context)} chars")
 
     try:
-        response = call_claude_code(context, base_dir, timeout, verbose)
+        response = call_claude_code(
+            context, base_dir, timeout, verbose,
+            allowed_tools=allowed_tools,
+        )
 
         if verbose:
             log.detail(f"Response: {len(response)} chars")
