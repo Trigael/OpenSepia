@@ -148,7 +148,8 @@ class OrchestratorConfig:
             ConfigError: If required config files are missing or invalid.
         """
         if tool_dir is None:
-            tool_dir = Path(__file__).parent.parent
+            from opensepia.dirs import get_tool_dir
+            tool_dir = get_tool_dir()
 
         if project_dir is None:
             project_dir = tool_dir / "project"

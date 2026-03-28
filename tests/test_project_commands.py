@@ -17,13 +17,8 @@ def _fake_tool_dir(tmp_path: Path) -> Path:
 
 
 def _patch_tool_dir(tmp_path: Path):
-    """Patch Path(__file__).parent.parent.parent to return tmp_path."""
-    # cmd_init / cmd_reset compute:  tool_dir = Path(__file__).parent.parent.parent
-    # __file__ is  .../opensepia/commands/project.py
-    # So we need __file__ such that parent.parent.parent == tmp_path
-    # i.e. __file__ = tmp_path / "a" / "b" / "project.py"
-    fake_file = str(tmp_path / "a" / "b" / "project.py")
-    return patch("opensepia.commands.project.__file__", fake_file)
+    """Patch get_tool_dir() to return tmp_path."""
+    return patch("opensepia.dirs.get_tool_dir", return_value=tmp_path)
 
 
 # ---------------------------------------------------------------------------

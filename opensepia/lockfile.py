@@ -8,6 +8,7 @@ Cross-platform: uses tempfile.gettempdir() instead of hardcoded /tmp/.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import tempfile
 import logging
@@ -54,11 +55,18 @@ class ProcessLock:
             ...
     """
 
-    def __init__(self, mode: str, lock_dir: str | None = None):
+    def __init__(self, mode: str, lock_dir: str | None = None, project_id: str | None = None):
         if lock_dir is None:
             lock_dir = str(Path.home() / ".opensepia" / "locks")
         self.mode = mode
-        self.lock_path = Path(lock_dir) / f"ai-team-cli-{mode}.lock"
+
+        if project_id is None:
+            from opensepia.dirs import get_tool_dir
+            project_id = hashlib.sha256(
+                str(get_tool_dir()).encode()
+            ).hexdigest()[:12]
+
+        self.lock_path = Path(lock_dir) / f"ai-team-cli-{project_id}-{mode}.lock"
         self._acquired = False
 
     def acquire(self) -> None:

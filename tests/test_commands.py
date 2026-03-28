@@ -442,14 +442,7 @@ class TestCmdInit:
     @patch("opensepia.commands.project.OrchestratorConfig.load")
     def test_creates_board_directories(self, mock_load, init_project_dir):
         mock_load.side_effect = _make_mock_config(init_project_dir)
-
-        # Patch the tool_dir resolution inside cmd_init
-        with patch("opensepia.commands.project.Path") as MockPath:
-            # cmd_init uses Path(__file__).parent.parent.parent to find tool_dir
-            MockPath.return_value.parent.parent.parent = init_project_dir
-            MockPath.__file__ = MockPath
-            # Actually just call with the real Path but override tool_dir detection
-            _run_init(init_project_dir, "TestProj", "A test project")
+        _run_init(init_project_dir, "TestProj", "A test project")
 
         board = init_project_dir / "project" / "board"
         assert (board / "inbox").is_dir()
@@ -888,33 +881,18 @@ def _run_init(tool_dir, name, description):
     """Call cmd_init with tool_dir override."""
     from opensepia.commands import project as proj_module
 
-    # Temporarily patch the tool_dir resolution
-    original_file = proj_module.__file__
-    # cmd_init uses Path(__file__).parent.parent.parent
-    # We need to make that resolve to tool_dir
-    # Easiest: patch at the function level by constructing the right path
-    fake_file = str(tool_dir / "opensepia" / "commands" / "project.py")
-    try:
-        proj_module.__file__ = fake_file
+    with patch("opensepia.dirs.get_tool_dir", return_value=tool_dir):
         proj_module.cmd_init([name, description])
-    finally:
-        proj_module.__file__ = original_file
 
 
 def _run_reset(tool_dir):
     """Call cmd_reset with tool_dir override and --yes to skip confirmation."""
     from opensepia.commands import project as proj_module
 
-    original_file = proj_module.__file__
-    fake_file = str(tool_dir / "opensepia" / "commands" / "project.py")
-
     # The daemon imports happen inside cmd_reset via:
     #   from opensepia.daemon import stop_daemon, get_daemon_status
     # We patch the daemon module functions so the lazy import picks them up.
-    with patch("opensepia.daemon.stop_daemon", side_effect=RuntimeError("not running")), \
+    with patch("opensepia.dirs.get_tool_dir", return_value=tool_dir), \
+         patch("opensepia.daemon.stop_daemon", side_effect=RuntimeError("not running")), \
          patch("opensepia.daemon.get_daemon_status", side_effect=RuntimeError("not running")):
-        try:
-            proj_module.__file__ = fake_file
-            proj_module.cmd_reset(["--yes"])
-        finally:
-            proj_module.__file__ = original_file
+        proj_module.cmd_reset(["--yes"])

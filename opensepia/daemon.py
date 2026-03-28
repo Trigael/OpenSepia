@@ -55,7 +55,10 @@ class OrchestratorDaemon:
         self.verbose = verbose
         self.max_cycles = max_cycles    # 0 = unlimited
         self.max_sprints = max_sprints  # 0 = unlimited
-        self.tool_dir = tool_dir or Path(__file__).parent.parent
+        if tool_dir is None:
+            from opensepia.dirs import get_tool_dir
+            tool_dir = get_tool_dir()
+        self.tool_dir = tool_dir
         self.state_path = self.tool_dir / DAEMON_STATE_FILE
         self.log_path = self.tool_dir / "logs" / "daemon.log"
         self.control_path = self.tool_dir / CONTROL_FILE
@@ -95,6 +98,10 @@ class OrchestratorDaemon:
 
         os.umask(0o22)
         os.chdir(str(self.tool_dir))
+
+        # Pin tool_dir so get_tool_dir() returns the correct value in the child
+        from opensepia.dirs import set_tool_dir
+        set_tool_dir(self.tool_dir)
 
         # Redirect stdio
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -427,7 +434,9 @@ def _terminate_process(pid: int) -> None:
 
 def stop_daemon(tool_dir: Path | None = None) -> bool:
     """Stop the running daemon. Returns True if stopped."""
-    tool_dir = tool_dir or Path(__file__).parent.parent
+    if tool_dir is None:
+        from opensepia.dirs import get_tool_dir
+        tool_dir = get_tool_dir()
     state_path = tool_dir / DAEMON_STATE_FILE
     state = DaemonState.load(state_path)
 
@@ -465,7 +474,9 @@ def stop_daemon(tool_dir: Path | None = None) -> bool:
 
 def send_pause_command(tool_dir: Path | None = None, pause: bool = True) -> str:
     """Send pause or resume command. Returns new status."""
-    tool_dir = tool_dir or Path(__file__).parent.parent
+    if tool_dir is None:
+        from opensepia.dirs import get_tool_dir
+        tool_dir = get_tool_dir()
     state_path = tool_dir / DAEMON_STATE_FILE
     state = DaemonState.load(state_path)
 
@@ -482,7 +493,9 @@ def send_pause_command(tool_dir: Path | None = None, pause: bool = True) -> str:
 
 def get_daemon_status(tool_dir: Path | None = None) -> DaemonState:
     """Load and validate daemon state. Cleans up stale state."""
-    tool_dir = tool_dir or Path(__file__).parent.parent
+    if tool_dir is None:
+        from opensepia.dirs import get_tool_dir
+        tool_dir = get_tool_dir()
     state_path = tool_dir / DAEMON_STATE_FILE
     state = DaemonState.load(state_path)
 

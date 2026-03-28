@@ -298,7 +298,8 @@ if __name__ == "__main__":
     import sys
 
     logging.basicConfig(level=logging.INFO)
-    base_dir = Path(__file__).parent.parent
+    from opensepia.dirs import get_tool_dir
+    base_dir = get_tool_dir()
     dispatcher = IntegrationDispatcher(base_dir)
 
     logger.info("Active integrations: %s", dispatcher.active_integrations)

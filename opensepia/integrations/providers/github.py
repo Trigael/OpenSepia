@@ -233,7 +233,8 @@ class GitHubProvider(BoardProvider):
 
         # 2) File cache
         import json as _json
-        cache_path = Path(__file__).parent.parent.parent / "board" / ".github_issue_map.json"
+        from opensepia.dirs import get_tool_dir
+        cache_path = get_tool_dir() / "project" / "board" / ".github_issue_map.json"
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 file_cache = _json.load(f)

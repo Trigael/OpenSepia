@@ -7,12 +7,15 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-LOG_DIR = Path(__file__).parent.parent / "logs"
+def _get_log_dir() -> Path:
+    from opensepia.dirs import get_tool_dir
+    return get_tool_dir() / "logs"
 
 
 def load_env() -> None:
     """Load config/.env into os.environ (if exists)."""
-    env_file = Path(__file__).parent.parent / "config" / ".env"
+    from opensepia.dirs import get_tool_dir
+    env_file = get_tool_dir() / "config" / ".env"
     if not env_file.exists():
         return
     for line in env_file.read_text(encoding="utf-8").split("\n"):
@@ -51,8 +54,9 @@ def setup_logging(name: str = "ai-team", level: str = "INFO",
 
     # File handler (if enabled)
     if log_to_file:
-        LOG_DIR.mkdir(parents=True, exist_ok=True)
-        log_file = LOG_DIR / "ai-team.log"
+        log_dir = _get_log_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "ai-team.log"
         file_handler = logging.FileHandler(log_file, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
         file_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")

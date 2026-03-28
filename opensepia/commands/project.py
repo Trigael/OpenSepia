@@ -20,7 +20,8 @@ def cmd_init(argv: list[str]) -> None:
     parser.add_argument("description", nargs="?", default="New project", help="Project description")
     args = parser.parse_args(argv)
 
-    tool_dir = Path(__file__).parent.parent.parent
+    from opensepia.dirs import get_tool_dir
+    tool_dir = get_tool_dir()
     project_dir = tool_dir / "project"
     board_dir = project_dir / "board"
     workspace_dir = project_dir / "workspace"
@@ -152,7 +153,8 @@ def cmd_reset(argv: list[str]) -> None:
     parser.add_argument("--yes", "-y", action="store_true", help="Skip confirmation")
     args = parser.parse_args(argv)
 
-    tool_dir = Path(__file__).parent.parent.parent
+    from opensepia.dirs import get_tool_dir
+    tool_dir = get_tool_dir()
     project_dir = tool_dir / "project"
 
     if not args.yes:
@@ -232,7 +234,8 @@ def cmd_setup(argv: list[str]) -> None:
     import shutil as _shutil
     import subprocess
 
-    tool_dir = Path(__file__).parent.parent.parent
+    from opensepia.dirs import get_tool_dir
+    tool_dir = get_tool_dir()
 
     log.banner(["OpenSepia — Setup Wizard"])
     log.info("")

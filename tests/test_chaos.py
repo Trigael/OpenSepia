@@ -328,34 +328,31 @@ class TestDaemonStateChaos:
 
 class TestLockfileChaos:
     def test_lock_with_corrupted_pid_file(self, tmp_path):
-        lock_path = tmp_path / "ai-team-cli-chaos.lock"
-        lock_path.write_text("not-a-number", encoding="utf-8")
-        lock = ProcessLock("chaos", lock_dir=str(tmp_path))
+        lock = ProcessLock("chaos", lock_dir=str(tmp_path), project_id="test")
+        lock.lock_path.write_text("not-a-number", encoding="utf-8")
         lock.acquire()  # Should handle gracefully
-        assert lock_path.exists()
-        assert lock_path.read_text(encoding="utf-8").strip().isdigit()
+        assert lock.lock_path.exists()
+        assert lock.lock_path.read_text(encoding="utf-8").strip().isdigit()
         lock.release()
-        assert not lock_path.exists()
+        assert not lock.lock_path.exists()
 
     def test_lock_with_empty_pid_file(self, tmp_path):
-        lock_path = tmp_path / "ai-team-cli-chaos.lock"
-        lock_path.write_text("", encoding="utf-8")
-        lock = ProcessLock("chaos", lock_dir=str(tmp_path))
+        lock = ProcessLock("chaos", lock_dir=str(tmp_path), project_id="test")
+        lock.lock_path.write_text("", encoding="utf-8")
         lock.acquire()
-        assert lock_path.exists()
-        assert lock_path.read_text(encoding="utf-8").strip().isdigit()
+        assert lock.lock_path.exists()
+        assert lock.lock_path.read_text(encoding="utf-8").strip().isdigit()
         lock.release()
-        assert not lock_path.exists()
+        assert not lock.lock_path.exists()
 
     def test_double_release(self, tmp_path):
-        lock = ProcessLock("chaos", lock_dir=str(tmp_path))
-        lock_path = tmp_path / "ai-team-cli-chaos.lock"
+        lock = ProcessLock("chaos", lock_dir=str(tmp_path), project_id="test")
         lock.acquire()
-        assert lock_path.exists()
+        assert lock.lock_path.exists()
         lock.release()
-        assert not lock_path.exists()
+        assert not lock.lock_path.exists()
         lock.release()  # Should not raise
-        assert not lock_path.exists()
+        assert not lock.lock_path.exists()
 
 
 # =============================================================================

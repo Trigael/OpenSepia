@@ -21,7 +21,8 @@ def _get_project_dirs() -> tuple[Path, Path]:
         config = OrchestratorConfig.load()
         return config.tool_dir, config.logs_dir
     except ConfigError:
-        tool_dir = Path(__file__).parent.parent.parent
+        from opensepia.dirs import get_tool_dir
+        tool_dir = get_tool_dir()
         return tool_dir, tool_dir / "project" / "logs" / "runs"
 
 
