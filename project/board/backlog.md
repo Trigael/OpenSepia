@@ -94,12 +94,27 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 - [x] `clouddeploy status` shows current deployment per environment
 - [x] `clouddeploy logs` shows deployment history with Rich table output
 
+### STORY-021: v1.0 release checklist
+**Priority**: HIGH
+**Assigned**: devops
+**Status**: IN_PROGRESS
+
+**As a** maintainer **I want** a complete release checklist executed **so that** v1.0 is tagged, documented, and ready to distribute
+
+**Acceptance criteria**:
+- [x] Version bumped to 1.0.0 in `pyproject.toml` and `__init__.py`
+- [x] CHANGELOG.md created with all features from Sprints 1-6
+- [x] README.md with quickstart guide, installation, and usage examples
+- [ ] All tests pass (`pytest tests/ -v` and `pytest tests/integration/ -v`)
+- [x] Dockerfile builds and runs successfully
+- [ ] Git tag `v1.0.0` ready (do not push)
+
 ## MEDIUM
 
 ### STORY-002: Set up development environment
 **Priority**: MEDIUM
 **Assigned**: devops
-**Status**: DONE
+**Status**: IN_PROGRESS
 
 **As a** developer **I want** a working dev environment with CI/CD basics **so that** the team can develop and test efficiently
 
@@ -222,14 +237,16 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 
 ### STORY-020: CLI help and documentation improvements
 **Priority**: LOW
+**Assigned**: dev1
+**Status**: DONE
 
 **As a** user **I want** clear `--help` text and usage examples on every command **so that** I can use CloudDeploy without reading external docs
 
 **Acceptance criteria**:
-- [ ] Every Click command and subcommand has a descriptive help string
-- [ ] `clouddeploy deploy --help` shows usage examples
-- [ ] `clouddeploy --help` shows grouped commands with descriptions
-- [ ] Add `examples` callback or `--examples` flag showing common workflows
+- [x] Every Click command and subcommand has a descriptive help string
+- [x] `clouddeploy deploy --help` shows usage examples
+- [x] `clouddeploy --help` shows grouped commands with descriptions
+- [x] Add `examples` callback or `--examples` flag showing common workflows
 
 ## DONE
 
@@ -262,3 +279,18 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 - [x] Promotion chain: dev → staging → prod
 - [x] Confirmation prompt for prod promotion
 - [x] Promotion recorded in deployment history
+### STORY-022: [Alert] Agent failure: DevOps Engineer, QA Engineer (2026-03-28 17:29)
+**Priority**: MEDIUM
+**Status**: TODO
+
+## Agent Failure Alert
+
+**Time**: 2026-03-28T17:29:32.302709
+**Mode**: dev-team
+**Failed**: DevOps Engineer, QA Engineer
+
+Check logs in `logs/runs/` for details.
+
+---
+*Automatic alert from the AI Dev Team orchestrator.*
+
