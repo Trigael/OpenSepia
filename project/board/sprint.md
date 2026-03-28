@@ -16,16 +16,10 @@
 - [ ] STORY-007: Implement AWS ECS provider (dev1)
 
 ## DONE
-- [x] STORY-001: Define MVP scope
-- [x] STORY-002: Set up project scaffolding
-- [x] STORY-003: Docker development environment
-- [x] STORY-004: Implement CLI skeleton with Click
-- [x] STORY-005: Define core data models and configuration schema
-- [x] STORY-006: Implement provider abstraction layer
-
+(completed stories omitted)
 ## BLOCKED
 
-## Security Analysis [Cycle 13]
+## Security Analysis [Cycle 17]
 
 ### Finding Status Summary
 
@@ -48,18 +42,9 @@
 | SEC-017 Cluster State Mutation | CLOSED (verified C8) | ~~LOW~~ |
 | SEC-018 Docker Resource Limits | CLOSED (fixed C10) | ~~LOW~~ |
 
-### Cycle 13 — Pentest Sweep (No New Code)
+### Cycle 17 — Maintenance Audit (No New Code)
 
-No source modifications since cycle 10. Full re-audit of db.py, health.py, aws_ecs.py, validation.py confirms all remediations intact.
-
-**Verified controls:**
-- **SQL injection**: All queries use parameterized statements (db.py) ✓
-- **Input validation**: Strict identifier regex, allowlisted environments/providers (validation.py) ✓
-- **SigV4 signing**: All ECS and CloudWatch requests signed (aws_ecs.py) ✓
-- **TLS enforcement**: `verify=True` on httpx client (aws_ecs.py:185) ✓
-- **Error leakage**: Debug details logged, not returned to caller (aws_ecs.py) ✓
-- **Credential handling**: Fail-closed on missing AWS creds (aws_ecs.py:76-80) ✓
-- **Public IP default**: `assign_public_ip` defaults to `False` (aws_ecs.py:43) ✓
+No source modifications since cycle 10. Git history confirms all workspace source files unchanged. All prior remediations remain intact.
 
 **Standing security approvals (unchanged):**
 - **STORY-010** (health.py): APPROVED
