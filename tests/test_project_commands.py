@@ -251,6 +251,51 @@ class TestCmdInit:
         cfg = yaml.safe_load(pf.read_text())
         assert cfg["project"]["description"] == "New project"
 
+    def test_initializes_lineage_with_all_agents(self, tmp_path):
+        """cmd_init creates lineage.yaml with all agents as type: original."""
+        from opensepia.commands.project import cmd_init
+
+        _fake_tool_dir(tmp_path)
+        with _patch_tool_dir(tmp_path), \
+             patch("opensepia.commands.project.OrchestratorConfig") as mock_cfg:
+            from opensepia.errors import ConfigError
+            mock_cfg.load.side_effect = ConfigError("x")
+            cmd_init(["TestProject"])
+
+        lineage_file = tmp_path / "project" / "board" / "evolution" / "lineage" / "lineage.yaml"
+        assert lineage_file.exists(), "lineage.yaml was not created"
+        data = yaml.safe_load(lineage_file.read_text())
+        agents = data["agents"]
+
+        expected = ["po", "pm", "dev1", "dev2", "devops", "tester",
+                    "sec_analyst", "sec_engineer", "sec_pentester"]
+        for aid in expected:
+            assert aid in agents, f"Agent {aid} missing from lineage"
+            assert agents[aid]["type"] == "original"
+
+    def test_lineage_init_idempotent(self, tmp_path):
+        """Calling cmd_init twice does not duplicate agents in lineage."""
+        from opensepia.commands.project import cmd_init
+
+        _fake_tool_dir(tmp_path)
+        with _patch_tool_dir(tmp_path), \
+             patch("opensepia.commands.project.OrchestratorConfig") as mock_cfg:
+            from opensepia.errors import ConfigError
+            mock_cfg.load.side_effect = ConfigError("x")
+            cmd_init(["TestProject"])
+            cmd_init(["TestProject"])
+
+        lineage_file = tmp_path / "project" / "board" / "evolution" / "lineage" / "lineage.yaml"
+        data = yaml.safe_load(lineage_file.read_text())
+        agents = data["agents"]
+
+        # Each agent appears exactly once (dict keys are unique by nature)
+        expected = ["po", "pm", "dev1", "dev2", "devops", "tester",
+                    "sec_analyst", "sec_engineer", "sec_pentester"]
+        assert len(agents) == len(expected)
+        for aid in expected:
+            assert agents[aid]["type"] == "original"
+
     def test_fresh_project_yaml_has_all_sections(self, tmp_path):
         """When no project.yaml exists, the created one has project, sprint, limits keys (line 114)."""
         from opensepia.commands.project import cmd_init
