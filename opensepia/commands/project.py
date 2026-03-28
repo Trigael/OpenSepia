@@ -100,6 +100,14 @@ def cmd_init(argv: list[str]) -> None:
         if not inbox.exists():
             inbox.write_text("", encoding="utf-8")
 
+    # Initialize evolution lineage for all agents
+    try:
+        from opensepia.evolution.spawning import AgentSpawner
+        spawner = AgentSpawner(board_dir)
+        spawner.initialize_lineage(agent_ids)
+    except Exception as exc:
+        log.warn(f"Could not initialize lineage: {exc}")
+
     # Seed PO inbox
     (board_dir / "inbox" / "po.md").write_text(
         f"## System message — Initialization\n\n"
