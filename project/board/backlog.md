@@ -9,30 +9,30 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-004: Implement CLI skeleton with Click
 **Priority**: CRITICAL
 **Assigned**: dev1
-**Status**: TODO
+**Status**: DONE
 
 **As a** developer **I want** a working CLI entry point with Click **so that** I can run `clouddeploy` commands from the terminal
 
 **Acceptance criteria**:
-- [ ] `clouddeploy --help` shows available commands
-- [ ] `clouddeploy --version` prints version
-- [ ] Command groups: `deploy`, `env`, `status`, `rollback`, `logs`
-- [ ] Click app in `src/cli.py` with proper entry point in setup
-- [ ] Rich console integration for colored output
+- [x] `clouddeploy --help` shows available commands
+- [x] `clouddeploy --version` prints version
+- [x] Command groups: `deploy`, `env`, `status`, `rollback`, `logs`
+- [x] Click app in `src/cli.py` with proper entry point in setup
+- [x] Rich console integration for colored output
 
 ### STORY-005: Define core data models and configuration schema
 **Priority**: CRITICAL
 **Assigned**: dev2
-**Status**: TODO
+**Status**: DONE
 
 **As a** developer **I want** well-defined data models for deployments, environments, and provider configs **so that** all components share a consistent structure
 
 **Acceptance criteria**:
-- [ ] Pydantic or dataclass models for: Deployment, Environment, ProviderConfig, HealthCheck
-- [ ] YAML-based config schema in `config/clouddeploy.yaml`
-- [ ] Environment definitions: dev, staging, prod with overridable settings
-- [ ] SQLite schema for deployment state tracking in `src/db.py`
-- [ ] Config loader in `src/config.py`
+- [x] Pydantic or dataclass models for: Deployment, Environment, ProviderConfig, HealthCheck
+- [x] YAML-based config schema in `config/clouddeploy.yaml`
+- [x] Environment definitions: dev, staging, prod with overridable settings
+- [x] SQLite schema for deployment state tracking in `src/db.py`
+- [x] Config loader in `src/config.py`
 
 ## HIGH
 
@@ -43,20 +43,20 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-006: Implement provider abstraction layer
 **Priority**: HIGH
 **Assigned**: dev1
-**Status**: TODO
+**Status**: DONE
 
 **As a** developer **I want** a clean provider interface **so that** adding new cloud providers is straightforward
 
 **Acceptance criteria**:
-- [ ] Abstract base class `CloudProvider` in `src/providers/base.py`
-- [ ] Methods: `deploy()`, `rollback()`, `status()`, `logs()`, `health_check()`
-- [ ] Provider registry for dynamic provider loading
-- [ ] AWS ECS stub provider implementing the interface
+- [x] Abstract base class `CloudProvider` in `src/providers/base.py`
+- [x] Methods: `deploy()`, `rollback()`, `status()`, `logs()`, `health_check()`
+- [x] Provider registry for dynamic provider loading
+- [x] AWS ECS stub provider implementing the interface
 
 ### STORY-007: Implement AWS ECS provider
 **Priority**: HIGH
 **Assigned**: dev1
-**Status**: TODO
+**Status**: IN_PROGRESS
 
 **As a** user **I want** to deploy my containerized app to AWS ECS **so that** I can run production workloads on AWS
 
@@ -99,17 +99,17 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-002: Set up development environment
 **Priority**: MEDIUM
 **Assigned**: devops
-**Status**: TODO
+**Status**: DONE
 
 **As a** developer **I want** a working dev environment with CI/CD basics **so that** the team can develop and test efficiently
 
 **Acceptance criteria**:
-- [ ] pyproject.toml with all dependencies (click, httpx, rich, pyyaml, pydantic)
-- [ ] Dockerfile for development
-- [ ] docker-compose.yml with local testing services
-- [ ] Makefile with: install, test, lint, format targets
-- [ ] pytest configuration with fixtures
-- [ ] Pre-commit hooks for linting
+- [x] pyproject.toml with all dependencies (click, httpx, rich, pyyaml, pydantic)
+- [x] Dockerfile for development
+- [x] docker-compose.yml with local testing services
+- [x] Makefile with: install, test, lint, format targets
+- [x] pytest configuration with fixtures
+- [x] Pre-commit hooks for linting
 
 ### STORY-010: Health check system
 **Priority**: MEDIUM
@@ -142,7 +142,7 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-012: Basic unit test suite
 **Priority**: LOW
 **Assigned**: tester
-**Status**: TODO
+**Status**: IN_PROGRESS
 
 **As a** developer **I want** a test suite for core components **so that** we catch regressions early
 

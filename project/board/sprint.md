@@ -6,13 +6,13 @@
 ## TODO
 
 ## IN PROGRESS
-- [ ] STORY-005: Define core data models and configuration schema (dev2)
 - [ ] STORY-002: Set up development environment (devops)
 - [ ] STORY-007: Implement AWS ECS provider (dev1)
 - [ ] STORY-012: Basic unit test suite (tester)
 
 ## REVIEW
 - [x] STORY-004: Implement CLI skeleton with Click (dev1)
+- [x] STORY-005: Define core data models and configuration schema (dev2)
 - [x] STORY-006: Implement provider abstraction layer (dev1)
 
 ## DONE
@@ -21,57 +21,54 @@
 
 ## BLOCKED
 
-## Security Analysis [Cycle 3]
+## Security Analysis [Cycle 7]
 
-### Re-review of Previous Findings
-
-**SEC-001 (Redis Exposed) — VERIFIED FIXED**
-Redis now has `--requirepass ${REDIS_PASSWORD}` (docker-compose.yml:26) and port bound to `127.0.0.1:6379:6379` (line 28). Healthcheck uses auth flag. Properly depends on service_healthy. Good work, devops.
-
-**SEC-002 (Secrets in Config) — VERIFIED FIXED (Cycle 2)**
-`config.py` uses `${ENV:VAR_NAME}` with strict regex. No secrets in `clouddeploy.yaml`. Remains good.
-
-**SEC-003 (Input Validation) — VERIFIED FIXED (Cycle 2)**
-`validation.py` allowlists remain effective. Test coverage includes injection attempts and path traversal (`test_validation.py`). Remains good.
-
-**SEC-006 (Docker Compose Exposes Ports) — VERIFIED FIXED**
-Both app (line 8: `127.0.0.1:8080:8080`) and Redis (line 28: `127.0.0.1:6379:6379`) now bind to localhost only. Inter-service uses `clouddeploy-net` bridge. Good.
-
-**SEC-007 (YAML safe_load) — VERIFIED SAFE**
-`config.py:123` uses `yaml.safe_load()`. No `yaml.load()` anywhere in codebase. Closed.
-
-**SEC-008 (SQL String Formatting in db.py) — DOWNGRADED TO INFO**
-Re-reviewed `db.py:91-103`. The f-string in `update_status()` uses only hardcoded column name strings (`"status = ?"`, `"finished_at = ?"`, `"message = ?"`). All values are parameterized. This is a safe pattern. While not ideal stylistically, it's not exploitable and all callers pass `DeploymentStatus` enum or string literals. Downgraded from LOW to INFO — no action required.
-
-### New Findings
-
-### SEC-009: Dockerfile HEALTHCHECK Leaks Internal URL Pattern
-**Severity**: LOW
-**CVSS**: 2.0
-**Category**: A05 Security Misconfiguration
-**File**: Dockerfile:30
-**Description**: The HEALTHCHECK command uses `python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"`. While functionally correct, this embeds the health endpoint path in the image metadata visible to anyone with `docker inspect` access. More importantly, the healthcheck uses an unvalidated HTTP request — if the `/health` endpoint ever returns a redirect to an external URL, `urlopen` will follow it.
-**Impact**: Low — container metadata exposure is minor. The redirect-following behavior is theoretical but worth noting for defense-in-depth.
-**Recommendation**: Consider using `CMD ["curl", "-f", "http://localhost:8080/health"]` if curl is available, or add a simple healthcheck script that doesn't follow redirects. Not urgent.
-
-### SEC-010: No Rate Limiting or Authentication on App Service
-**Severity**: MEDIUM (Deferred)
-**Category**: A07 Identification and Authentication Failures
-**Description**: The app service exposes port 8080 (localhost only, which is good) but there is no authentication middleware, API key requirement, or rate limiting mentioned in any code. The CLI currently has no web-facing endpoints implemented yet, so this is a **forward-looking finding** — when the web dashboard (STORY-011) and API endpoints are built, authentication and rate limiting MUST be implemented from the start.
-**Impact**: Deferred — no exploitable surface exists yet.
-**Recommendation**: When implementing STORY-011 (web dashboard), include: (1) API key or session-based auth, (2) rate limiting middleware, (3) CORS configuration. Filing as a tracking item for sec_analyst to add to the security requirements.
-
-### Summary — Cycle 3 Security Posture
+### Status of Previous Findings
 
 | Finding | Status | Severity |
 |---------|--------|----------|
-| SEC-001 Redis Exposed | **FIXED** | ~~HIGH~~ |
-| SEC-002 Secrets in Config | **FIXED** | ~~MEDIUM~~ |
-| SEC-003 Input Validation | **FIXED** | ~~HIGH~~ |
-| SEC-006 Port Exposure | **FIXED** | ~~MEDIUM~~ |
-| SEC-007 YAML Loading | **SAFE** | ~~INFO~~ |
-| SEC-008 SQL Formatting | Downgraded | INFO |
-| SEC-009 Healthcheck | NEW | LOW |
-| SEC-010 No Auth (deferred) | NEW | MEDIUM (deferred) |
+| SEC-001 Redis Exposed | CLOSED (fixed C3) | ~~HIGH~~ |
+| SEC-002 Secrets in Config | CLOSED (fixed C2) | ~~MEDIUM~~ |
+| SEC-003 Input Validation | CLOSED (fixed C2) | ~~HIGH~~ |
+| SEC-006 Port Exposure | CLOSED (fixed C3) | ~~MEDIUM~~ |
+| SEC-007 YAML Loading | CLOSED (safe) | ~~INFO~~ |
+| SEC-008 SQL Formatting | CLOSED (info) | ~~INFO~~ |
+| SEC-009 Healthcheck | VERIFIED FIXED (C5) | ~~LOW~~ |
+| SEC-010 No Auth (deferred) | OPEN (deferred) | MEDIUM |
+| SEC-011 Missing SigV4 (ECS) | VERIFIED FIXED (C7) | ~~HIGH~~ |
+| SEC-012 Error Leakage | VERIFIED FIXED (C4) | ~~MEDIUM~~ |
+| SEC-013 Hardcoded Cluster | VERIFIED FIXED (C7) | ~~LOW~~ |
+| SEC-014 TLS Config | VERIFIED FIXED (C4) | ~~LOW~~ |
+| SEC-015 CloudWatch Unsigned | VERIFIED FIXED (C7) | ~~HIGH~~ |
 
-**Overall**: Security posture has significantly improved. All critical and high findings from Cycles 1-2 are resolved. Remaining items are low-severity or deferred. The codebase demonstrates good security practices: parameterized SQL, input validation, safe YAML loading, localhost-only ports, non-root Docker user, multi-stage builds. Well done team.
+### Pentest Verification — Cycle 7
+
+**SEC-011 + SEC-015: AWS SigV4 Request Signing — VERIFIED FIXED ✓**
+
+Verified by code review of `src/clouddeploy/providers/aws_ecs.py`:
+
+1. **Signing coverage**: Both `_ecs_request()` (line 359) and `_logs_request()` (line 375) call `_sign_and_merge_headers()` before every HTTP POST. No code path can bypass signing.
+2. **Fail-closed**: `_get_aws_credentials()` raises `ValueError` when `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` are missing or empty. No silent fallback to unsigned requests.
+3. **Header completeness**: `Authorization`, `X-Amz-Date`, `X-Amz-Content-Sha256` are set on every request. `X-Amz-Security-Token` included when STS credentials are present.
+4. **Single code path**: Both ECS and CloudWatch Logs requests share `_sign_and_merge_headers()` → `_sigv4_sign()`. No duplicate signing logic to drift.
+5. **Canonical request construction**: Content-Type is included in signed headers, preventing header tampering. Payload hash covers the request body.
+6. **Test coverage**: `test_sigv4.py` covers credential loading (success, with token, missing, empty), header generation, credential scope per region/service, fail-closed behavior, and verifies no HTTP call is made when credentials are absent.
+
+**SEC-013: Hardcoded Default Cluster — VERIFIED FIXED ✓**
+
+1. `AwsEcsProvider.__init__()` accepts `cluster` parameter, stores as `self._cluster`.
+2. `rollback()` (line 522), `status()` (line 558), `health_check()` (line 595) all use `self._cluster`.
+3. `deploy()` correctly reads cluster from `EcsConfig` for per-deployment override — no conflict.
+4. Test `test_provider_uses_configured_cluster` confirms cluster propagation to API calls.
+
+### Remaining Open Finding
+
+| Finding | Status | Severity | Notes |
+|---------|--------|----------|-------|
+| SEC-010 No Auth (deferred) | OPEN | MEDIUM | Deferred to STORY-011 (web dashboard). Acceptable for Sprint 1 CLI-only scope. |
+
+### Summary — Cycle 7 Security Posture
+
+No remaining security blockers for STORY-007. All HIGH-severity findings are now verified fixed. The only open finding (SEC-010) is deferred to a future story and does not affect the current sprint scope.
+
+**STORY-007 security gate: PASSED** — no security objection to moving to REVIEW/DONE.
