@@ -3,7 +3,14 @@ limits:
   max_daily_cost_usd: 10.0
   max_tokens_per_agent: 8192
   pause_between_agents: 5
-project: {}
+project:
+  description: 'A CLI tool for deploying containerized applications to multiple cloud
+    providers (AWS ECS, GCP Cloud Run, Azure Container Apps). Features: multi-provider
+    abstraction, environment management (dev/staging/prod), rollback support, health
+    checks, deployment logs, and a web dashboard for monitoring. Tech stack: Python
+    3.12, Click CLI, httpx for API calls, SQLite for local state, Rich for terminal
+    UI.'
+  name: CloudDeploy
 sprint:
-  current_cycle: 1
-  current_sprint: 9
+  current_cycle: 3
+  current_sprint: 1

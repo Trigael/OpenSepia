@@ -1,88 +1,77 @@
-# Sprint 9 — Documentation, Observability & Production Readiness
+# Sprint 1 — Initialization
 
-**Goal**: Deliver OpenAPI docs (STORY-023), attachments (STORY-029), activity filtering (STORY-031), agent metrics (STORY-032), and PostgreSQL support (STORY-036)
-**Start**: 2026-03-28
-**End**: 2026-04-01
-**Carry-over**: none
+**Goal**: Establish project foundation — CLI skeleton, data models, provider abstraction, dev environment
+**Start**: 2026-03-28 11:19
 
-## Stories
+## TODO
 
-### STORY-023: OpenAPI/Swagger documentation
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
+## IN PROGRESS
+- [ ] STORY-005: Define core data models and configuration schema (dev2)
+- [ ] STORY-002: Set up development environment (devops)
+- [ ] STORY-007: Implement AWS ECS provider (dev1)
+- [ ] STORY-012: Basic unit test suite (tester)
 
-**As a** developer integrating with AgentBoard **I want** auto-generated OpenAPI documentation **so that** I can discover and understand all endpoints without reading source code.
+## REVIEW
+- [x] STORY-004: Implement CLI skeleton with Click (dev1)
+- [x] STORY-006: Implement provider abstraction layer (dev1)
 
-**Acceptance criteria**:
-- [ ] GET /docs — Swagger UI accessible (FastAPI built-in)
-- [ ] GET /openapi.json — full OpenAPI 3.0 spec
-- [ ] All endpoints have summary and description
-- [ ] All request/response models documented with examples
-- [ ] Authentication scheme documented (API key header)
-- [ ] Error responses documented (400, 401, 403, 404, 429)
+## DONE
+- [x] STORY-001: Define MVP scope (po)
+- [x] STORY-003: Create initial project structure (devops)
 
-### STORY-029: Item attachments API
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: TODO
+## BLOCKED
 
-**As an** agent **I want** to attach files (logs, screenshots, diffs) to work items **so that** context is preserved alongside the item.
+## Security Analysis [Cycle 3]
 
-**Acceptance criteria**:
-- [ ] POST /api/items/{id}/attachments — upload file (multipart/form-data)
-- [ ] GET /api/items/{id}/attachments — list attachments with metadata
-- [ ] GET /api/attachments/{id} — download attachment
-- [ ] DELETE /api/attachments/{id} — delete attachment
-- [ ] Max file size: 10MB, configurable
-- [ ] Stored on local filesystem in ./attachments/ directory
-- [ ] Attachment metadata in DB (filename, size, mime_type, uploaded_by, created_at)
+### Re-review of Previous Findings
 
-### STORY-031: Activity feed filtering
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: TODO
+**SEC-001 (Redis Exposed) — VERIFIED FIXED**
+Redis now has `--requirepass ${REDIS_PASSWORD}` (docker-compose.yml:26) and port bound to `127.0.0.1:6379:6379` (line 28). Healthcheck uses auth flag. Properly depends on service_healthy. Good work, devops.
 
-**As a** human supervisor **I want** to filter the activity feed by agent, action type, item, and date range **so that** I can investigate specific events efficiently.
+**SEC-002 (Secrets in Config) — VERIFIED FIXED (Cycle 2)**
+`config.py` uses `${ENV:VAR_NAME}` with strict regex. No secrets in `clouddeploy.yaml`. Remains good.
 
-**Acceptance criteria**:
-- [ ] GET /api/activity accepts filters: agent_id, action, item_id, date_from, date_to
-- [ ] Multiple filters combine with AND logic
-- [ ] Paginated with same envelope as STORY-016
-- [ ] Action types: created, updated, transitioned, commented, approved, rejected, deleted
-- [ ] Date filtering uses ISO 8601 format
-- [ ] Dashboard activity feed supports the same filters via query params
+**SEC-003 (Input Validation) — VERIFIED FIXED (Cycle 2)**
+`validation.py` allowlists remain effective. Test coverage includes injection attempts and path traversal (`test_validation.py`). Remains good.
 
-### STORY-032: Agent performance metrics API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
+**SEC-006 (Docker Compose Exposes Ports) — VERIFIED FIXED**
+Both app (line 8: `127.0.0.1:8080:8080`) and Redis (line 28: `127.0.0.1:6379:6379`) now bind to localhost only. Inter-service uses `clouddeploy-net` bridge. Good.
 
-**As a** project manager **I want** to view per-agent metrics (items completed, avg cycle time, rejection rate) **so that** I can identify bottlenecks and improve team efficiency.
+**SEC-007 (YAML safe_load) — VERIFIED SAFE**
+`config.py:123` uses `yaml.safe_load()`. No `yaml.load()` anywhere in codebase. Closed.
 
-**Acceptance criteria**:
-- [ ] GET /api/metrics/agents — return per-agent stats
-- [ ] Metrics per agent: items_completed, items_rejected, avg_cycle_time_hours, items_in_progress
-- [ ] GET /api/metrics/agents/{id} — detailed metrics for one agent
-- [ ] Optional date range filter (date_from, date_to)
-- [ ] Computed from audit log data (no separate metrics store)
-- [ ] Response cached for 5 minutes
+**SEC-008 (SQL String Formatting in db.py) — DOWNGRADED TO INFO**
+Re-reviewed `db.py:91-103`. The f-string in `update_status()` uses only hardcoded column name strings (`"status = ?"`, `"finished_at = ?"`, `"message = ?"`). All values are parameterized. This is a safe pattern. While not ideal stylistically, it's not exploitable and all callers pass `DeploymentStatus` enum or string literals. Downgraded from LOW to INFO — no action required.
 
-### STORY-036: PostgreSQL migration support
-**Priority**: MEDIUM
-**Assigned**: devops
-**Status**: TODO
+### New Findings
 
-**As a** system administrator **I want** to run AgentBoard on PostgreSQL instead of SQLite **so that** the system can handle concurrent writes and larger deployments.
+### SEC-009: Dockerfile HEALTHCHECK Leaks Internal URL Pattern
+**Severity**: LOW
+**CVSS**: 2.0
+**Category**: A05 Security Misconfiguration
+**File**: Dockerfile:30
+**Description**: The HEALTHCHECK command uses `python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"`. While functionally correct, this embeds the health endpoint path in the image metadata visible to anyone with `docker inspect` access. More importantly, the healthcheck uses an unvalidated HTTP request — if the `/health` endpoint ever returns a redirect to an external URL, `urlopen` will follow it.
+**Impact**: Low — container metadata exposure is minor. The redirect-following behavior is theoretical but worth noting for defense-in-depth.
+**Recommendation**: Consider using `CMD ["curl", "-f", "http://localhost:8080/health"]` if curl is available, or add a simple healthcheck script that doesn't follow redirects. Not urgent.
 
-**Acceptance criteria**:
-- [ ] DATABASE_URL env var selects backend: sqlite:///path or postgresql://...
-- [ ] All SQL queries compatible with both SQLite and PostgreSQL
-- [ ] Migration script to move data from SQLite to PostgreSQL
-- [ ] Connection pooling configured for PostgreSQL (default pool size 5)
-- [ ] CI runs tests against both backends
-- [ ] SQLite remains the default for single-node deployments
+### SEC-010: No Rate Limiting or Authentication on App Service
+**Severity**: MEDIUM (Deferred)
+**Category**: A07 Identification and Authentication Failures
+**Description**: The app service exposes port 8080 (localhost only, which is good) but there is no authentication middleware, API key requirement, or rate limiting mentioned in any code. The CLI currently has no web-facing endpoints implemented yet, so this is a **forward-looking finding** — when the web dashboard (STORY-011) and API endpoints are built, authentication and rate limiting MUST be implemented from the start.
+**Impact**: Deferred — no exploitable surface exists yet.
+**Recommendation**: When implementing STORY-011 (web dashboard), include: (1) API key or session-based auth, (2) rate limiting middleware, (3) CORS configuration. Filing as a tracking item for sec_analyst to add to the security requirements.
 
-## Bugs
+### Summary — Cycle 3 Security Posture
 
-(none)
+| Finding | Status | Severity |
+|---------|--------|----------|
+| SEC-001 Redis Exposed | **FIXED** | ~~HIGH~~ |
+| SEC-002 Secrets in Config | **FIXED** | ~~MEDIUM~~ |
+| SEC-003 Input Validation | **FIXED** | ~~HIGH~~ |
+| SEC-006 Port Exposure | **FIXED** | ~~MEDIUM~~ |
+| SEC-007 YAML Loading | **SAFE** | ~~INFO~~ |
+| SEC-008 SQL Formatting | Downgraded | INFO |
+| SEC-009 Healthcheck | NEW | LOW |
+| SEC-010 No Auth (deferred) | NEW | MEDIUM (deferred) |
+
+**Overall**: Security posture has significantly improved. All critical and high findings from Cycles 1-2 are resolved. Remaining items are low-severity or deferred. The codebase demonstrates good security practices: parameterized SQL, input validation, safe YAML loading, localhost-only ports, non-root Docker user, multi-stage builds. Well done team.

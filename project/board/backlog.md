@@ -1,329 +1,160 @@
-# Product Backlog — AgentBoard
+# Product Backlog — CloudDeploy
+
+## Product Vision
+
+CloudDeploy makes deploying containerized apps to any cloud as simple as `clouddeploy up`. One CLI, multiple providers, zero complexity. MVP targets AWS ECS with environment management and health checks. Multi-provider and web dashboard follow.
 
 ## CRITICAL
 
-(none)
+### STORY-004: Implement CLI skeleton with Click
+**Priority**: CRITICAL
+**Assigned**: dev1
+**Status**: TODO
+
+**As a** developer **I want** a working CLI entry point with Click **so that** I can run `clouddeploy` commands from the terminal
+
+**Acceptance criteria**:
+- [ ] `clouddeploy --help` shows available commands
+- [ ] `clouddeploy --version` prints version
+- [ ] Command groups: `deploy`, `env`, `status`, `rollback`, `logs`
+- [ ] Click app in `src/cli.py` with proper entry point in setup
+- [ ] Rich console integration for colored output
+
+### STORY-005: Define core data models and configuration schema
+**Priority**: CRITICAL
+**Assigned**: dev2
+**Status**: TODO
+
+**As a** developer **I want** well-defined data models for deployments, environments, and provider configs **so that** all components share a consistent structure
+
+**Acceptance criteria**:
+- [ ] Pydantic or dataclass models for: Deployment, Environment, ProviderConfig, HealthCheck
+- [ ] YAML-based config schema in `config/clouddeploy.yaml`
+- [ ] Environment definitions: dev, staging, prod with overridable settings
+- [ ] SQLite schema for deployment state tracking in `src/db.py`
+- [ ] Config loader in `src/config.py`
 
 ## HIGH
 
-### BUG-006: Rate limiter memory exhaustion (PENTEST-009)
+### STORY-001: Define MVP scope
+**Priority**: HIGH
+**Status**: DONE
+
+### STORY-006: Implement provider abstraction layer
 **Priority**: HIGH
 **Assigned**: dev1
-**Status**: DONE
+**Status**: TODO
 
-**As a** system administrator **I want** the rate limiter to bound its memory usage **so that** an attacker cannot exhaust server memory by generating many unique client keys.
+**As a** developer **I want** a clean provider interface **so that** adding new cloud providers is straightforward
 
 **Acceptance criteria**:
-- [ ] Rate limiter evicts stale entries (e.g., LRU or time-based expiry)
-- [ ] Maximum number of tracked clients is bounded (configurable, default 10000)
-- [ ] Memory usage stays constant under sustained load from many unique IPs
-- [ ] Existing rate limiting behavior unchanged for normal traffic
-- [ ] Unit test demonstrating memory bound under adversarial load
+- [ ] Abstract base class `CloudProvider` in `src/providers/base.py`
+- [ ] Methods: `deploy()`, `rollback()`, `status()`, `logs()`, `health_check()`
+- [ ] Provider registry for dynamic provider loading
+- [ ] AWS ECS stub provider implementing the interface
 
-### BUG-007: Dashboard HTML partials served without authentication (PENTEST-007)
+### STORY-007: Implement AWS ECS provider
+**Priority**: HIGH
+**Assigned**: dev1
+**Status**: TODO
+
+**As a** user **I want** to deploy my containerized app to AWS ECS **so that** I can run production workloads on AWS
+
+**Acceptance criteria**:
+- [ ] ECS provider in `src/providers/aws_ecs.py` implementing CloudProvider
+- [ ] Create/update ECS service and task definition
+- [ ] Support Fargate launch type
+- [ ] Environment variable injection from config
+- [ ] Uses httpx for AWS API calls (or boto3 if team prefers)
+
+### STORY-008: Environment management (dev/staging/prod)
 **Priority**: HIGH
 **Assigned**: dev2
-**Status**: DONE
+**Status**: TODO
 
-**As a** security engineer **I want** dashboard endpoints to require authentication **so that** board data is not exposed to unauthenticated users.
+**As a** user **I want** to manage multiple deployment environments **so that** I can promote builds from dev → staging → prod
 
 **Acceptance criteria**:
-- [ ] All /dashboard/* endpoints require valid session cookie
-- [ ] Unauthenticated requests to dashboard partials return 401 or redirect to login
-- [ ] /dashboard/login remains accessible without authentication
-- [ ] Existing dashboard functionality unchanged for authenticated users
-- [ ] Integration test verifying unauthenticated access is blocked
+- [ ] `clouddeploy env list` shows configured environments
+- [ ] `clouddeploy env show <name>` shows environment details
+- [ ] `clouddeploy env create <name>` creates new environment config
+- [ ] Each environment has: provider, region, replicas, env vars, resource limits
+- [ ] Environment configs stored in `config/environments/`
+
+### STORY-009: Deployment state tracking with SQLite
+**Priority**: HIGH
+**Assigned**: dev2
+**Status**: TODO
+
+**As a** user **I want** deployment history tracked locally **so that** I can see what was deployed, when, and roll back if needed
+
+**Acceptance criteria**:
+- [ ] SQLite database at `~/.clouddeploy/state.db`
+- [ ] Track: deployment_id, timestamp, environment, image, status, commit_sha
+- [ ] `clouddeploy status` shows current deployment per environment
+- [ ] `clouddeploy logs` shows deployment history with Rich table output
 
 ## MEDIUM
 
-### STORY-023: OpenAPI/Swagger documentation
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
-
-**As a** developer integrating with AgentBoard **I want** auto-generated OpenAPI documentation **so that** I can discover and understand all endpoints without reading source code.
-
-**Acceptance criteria**:
-- [ ] GET /docs — Swagger UI accessible (FastAPI built-in)
-- [ ] GET /openapi.json — full OpenAPI 3.0 spec
-- [ ] All endpoints have summary and description
-- [ ] All request/response models documented with examples
-- [ ] Authentication scheme documented (API key header)
-- [ ] Error responses documented (400, 401, 403, 404, 429)
-
-### STORY-026: Import/export API (JSON/CSV)
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
-
-**As a** project manager **I want** to export all items as JSON or CSV and import from those formats **so that** I can migrate data or create reports.
-
-**Acceptance criteria**:
-- [ ] GET /api/export?format=json — export all items with labels, comments as JSON
-- [ ] GET /api/export?format=csv — export items as flat CSV (one row per item)
-- [ ] POST /api/import — import items from JSON (same schema as export)
-- [ ] Import validates all required fields before inserting
-- [ ] Import supports "upsert" mode (update existing items by ID, create new ones)
-- [ ] Audit log entry for import/export operations
-
-### STORY-029: Item attachments API
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: TODO
-
-**As an** agent **I want** to attach files (logs, screenshots, diffs) to work items **so that** context is preserved alongside the item.
-
-**Acceptance criteria**:
-- [ ] POST /api/items/{id}/attachments — upload file (multipart/form-data)
-- [ ] GET /api/items/{id}/attachments — list attachments with metadata
-- [ ] GET /api/attachments/{id} — download attachment
-- [ ] DELETE /api/attachments/{id} — delete attachment
-- [ ] Max file size: 10MB, configurable
-- [ ] Stored on local filesystem in ./attachments/ directory
-- [ ] Attachment metadata in DB (filename, size, mime_type, uploaded_by, created_at)
-
-### STORY-030: Tags and custom fields API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
-
-**As a** project manager **I want** to define custom fields on work items **so that** teams can track project-specific metadata without schema changes.
-
-**Acceptance criteria**:
-- [ ] POST /api/custom-fields — define field {name, type: text|number|boolean|select, options (for select)}
-- [ ] GET /api/custom-fields — list defined fields
-- [ ] DELETE /api/custom-fields/{id} — remove field definition and all values
-- [ ] PATCH /api/items/{id} accepts custom_fields: {field_name: value}
-- [ ] Custom field values validated against field type
-- [ ] Custom fields included in item detail and export responses
-- [ ] GET /api/items?custom.{field_name}={value} — filter by custom field
-
-### STORY-031: Activity feed filtering
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: TODO
-
-**As a** human supervisor **I want** to filter the activity feed by agent, action type, item, and date range **so that** I can investigate specific events efficiently.
-
-**Acceptance criteria**:
-- [ ] GET /api/activity accepts filters: agent_id, action, item_id, date_from, date_to
-- [ ] Multiple filters combine with AND logic
-- [ ] Paginated with same envelope as STORY-016
-- [ ] Action types: created, updated, transitioned, commented, approved, rejected, deleted
-- [ ] Date filtering uses ISO 8601 format
-- [ ] Dashboard activity feed supports the same filters via query params
-
-### STORY-032: Agent performance metrics API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
-
-**As a** project manager **I want** to view per-agent metrics (items completed, avg cycle time, rejection rate) **so that** I can identify bottlenecks and improve team efficiency.
-
-**Acceptance criteria**:
-- [ ] GET /api/metrics/agents — return per-agent stats
-- [ ] Metrics per agent: items_completed, items_rejected, avg_cycle_time_hours, items_in_progress
-- [ ] GET /api/metrics/agents/{id} — detailed metrics for one agent
-- [ ] Optional date range filter (date_from, date_to)
-- [ ] Computed from audit log data (no separate metrics store)
-- [ ] Response cached for 5 minutes
-
-### STORY-033: Cycle velocity tracking API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TODO
-
-**As a** project manager **I want** to track how many story points or items are completed per cycle/sprint **so that** I can forecast capacity and detect slowdowns.
-
-**Acceptance criteria**:
-- [ ] GET /api/metrics/velocity — return per-cycle completion counts
-- [ ] Response: list of {cycle_id, sprint_id, items_completed, items_added, items_carried_over, date}
-- [ ] GET /api/metrics/velocity/trend — rolling average over last N cycles (default 5)
-- [ ] Dashboard widget showing velocity chart data
-- [ ] Computed from audit log + sprint history
-
-### STORY-036: PostgreSQL migration support
+### STORY-002: Set up development environment
 **Priority**: MEDIUM
 **Assigned**: devops
 **Status**: TODO
 
-**As a** system administrator **I want** to run AgentBoard on PostgreSQL instead of SQLite **so that** the system can handle concurrent writes and larger deployments.
+**As a** developer **I want** a working dev environment with CI/CD basics **so that** the team can develop and test efficiently
 
 **Acceptance criteria**:
-- [ ] DATABASE_URL env var selects backend: sqlite:///path or postgresql://...
-- [ ] All SQL queries compatible with both SQLite and PostgreSQL
-- [ ] Migration script to move data from SQLite to PostgreSQL
-- [ ] Connection pooling configured for PostgreSQL (default pool size 5)
-- [ ] CI runs tests against both backends
-- [ ] SQLite remains the default for single-node deployments
+- [ ] pyproject.toml with all dependencies (click, httpx, rich, pyyaml, pydantic)
+- [ ] Dockerfile for development
+- [ ] docker-compose.yml with local testing services
+- [ ] Makefile with: install, test, lint, format targets
+- [ ] pytest configuration with fixtures
+- [ ] Pre-commit hooks for linting
+
+### STORY-010: Health check system
+**Priority**: MEDIUM
+**Assigned**: dev1
+**Status**: TODO
+
+**As a** user **I want** automatic health checks after deployment **so that** I know if my deployment succeeded
+
+**Acceptance criteria**:
+- [ ] Configurable health check endpoint (default: `/health`)
+- [ ] Polling with timeout and retry logic
+- [ ] Auto-rollback option on health check failure
+- [ ] Health status in deployment state DB
+
+### STORY-011: Rollback support
+**Priority**: MEDIUM
+**Assigned**: dev2
+**Status**: TODO
+
+**As a** user **I want** to rollback to a previous deployment **so that** I can recover from bad deploys quickly
+
+**Acceptance criteria**:
+- [ ] `clouddeploy rollback <env>` rolls back to previous deployment
+- [ ] `clouddeploy rollback <env> --to <deployment_id>` targets specific version
+- [ ] Rollback creates a new deployment record (not delete)
+- [ ] Confirmation prompt before rollback to prod
 
 ## LOW
 
-(none)
+### STORY-012: Basic unit test suite
+**Priority**: LOW
+**Assigned**: tester
+**Status**: TODO
+
+**As a** developer **I want** a test suite for core components **so that** we catch regressions early
+
+**Acceptance criteria**:
+- [ ] Tests for config loading
+- [ ] Tests for data models
+- [ ] Tests for provider abstraction (mock provider)
+- [ ] Tests for SQLite state management
+- [ ] Minimum 70% coverage on core modules
 
 ## DONE
 
-### BUG-005: Agent-written source files silently deleted from workspace
-**Priority**: CRITICAL
-**Assigned**: devops
-**Status**: DONE
-
-### STORY-013: Security hardening — fix all RE-OPENED findings
-**Priority**: CRITICAL
-**Assigned**: dev1
-**Status**: DONE
-
-### BUG-002: AgentCommitStep merge-on-DONE causes file disappearances
-**Priority**: CRITICAL
-**Assigned**: devops
-**Status**: DONE
-
-### BUG-003: Merge conflict markers staged by git add -A
+### STORY-001: Define MVP scope
 **Priority**: HIGH
-**Assigned**: devops
-**Status**: DONE
-
-### BUG-004: Merge story branches on REVIEW status, not just DONE
-**Priority**: HIGH
-**Assigned**: devops
-**Status**: DONE
-
-### STORY-001: Define AgentBoard product vision and architecture
-**Priority**: HIGH
-**Assigned**: po
-**Status**: REVIEW
-
-### STORY-002: Set up FastAPI project scaffold with SQLite and health endpoint
-**Priority**: HIGH
-**Assigned**: dev1
-**Status**: IN_PROGRESS
-
-### STORY-003: Work item CRUD API for stories and bugs
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: TODO
-
-### STORY-004: Agent inbox messaging API
-**Priority**: HIGH
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-005: Board state endpoint with markdown export
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-006: Pages / document storage API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-007: Sprint / cycle management API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-008: Story comments API
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-009: Audit log and activity tracking
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-010: Human supervision dashboard (htmx)
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-011: Supervision queue and approval workflow
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-012: MR/PR proxy API
-**Priority**: LOW
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-014: Labels API
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-015: Bulk operations API
-**Priority**: HIGH
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-016: Pagination on all list endpoints
-**Priority**: HIGH
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-017: Search endpoint for items
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-018: Snapshot/backup API
-**Priority**: HIGH
-**Assigned**: devops
-**Status**: DONE
-
-### STORY-019: WebSocket ticket-based auth
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-020: Rollback support
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: TESTING
-
-### STORY-021: Per-agent capability rules
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-022: Rate limiting middleware
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-024: Configuration API
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: TODO
-
-### STORY-025: Health check with DB stats
-**Priority**: MEDIUM
-**Assigned**: devops
-**Status**: DONE
-
-### STORY-027: Notification/webhook system
-**Priority**: MEDIUM
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-028: Item relations API
-**Priority**: MEDIUM
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-034: Fix SEC-015 — require API key for production
-**Priority**: HIGH
-**Assigned**: dev1
-**Status**: DONE
-
-### STORY-035: Fix PENTEST-004 — supervision queue pagination
-**Priority**: HIGH
-**Assigned**: dev2
-**Status**: DONE
-
-### STORY-037: API versioning
-**Priority**: MEDIUM
-**Assigned**: dev1
 **Status**: DONE

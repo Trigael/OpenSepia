@@ -555,7 +555,7 @@ agents:
 # EVOLUTION — controls agent self-modification capabilities
 # =============================================================================
 evolution:
-  enabled: false
+  enabled: true
   auto_approve:
     memory: true
     skills: true
