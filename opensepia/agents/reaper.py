@@ -17,7 +17,7 @@ import time
 logger = logging.getLogger(__name__)
 
 # Command patterns that identify agent child processes
-_AGENT_CHILD_PATTERNS = (b"claude", b"pytest", b"python3 -m pytest")
+_AGENT_CHILD_PATTERNS = (b"claude", b"pytest", b"python3 -m pytest", b"uvicorn", b"node_modules/.bin")
 
 
 def reap_orphaned_agents(grace_period: float = 2.0) -> int:
