@@ -417,18 +417,3 @@ class OrchestratorConfig:
                 pass
         return base
 
-    def get_spawned_agent_ids(self) -> list[str]:
-        """List IDs of active spawned agents from the evolution registry."""
-        registry_path = self.board_dir / "evolution" / "registry.yaml"
-        if not registry_path.exists():
-            return []
-        try:
-            import yaml as _yaml
-            with open(registry_path, "r", encoding="utf-8") as f:
-                registry = _yaml.safe_load(f) or {}
-            return [
-                aid for aid, defn in registry.get("agents", {}).items()
-                if defn.get("status") == "active"
-            ]
-        except (OSError, ValueError):
-            return []

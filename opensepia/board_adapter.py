@@ -33,9 +33,12 @@ class AgentContext:
     inbox: str
     workspace_tree: str
     provider_comments: str
-    blockers_md: str
     sprint_num: int
     cycle_num: int
+    # Evolution fields (empty strings when evolution is disabled)
+    # New SCRUM fields (default empty for backward compat)
+    blockers_md: str = ""
+    sprint_goal: str = ""
     # Evolution fields (empty strings when evolution is disabled)
     agent_memory: str = ""
     relevant_skills: str = ""

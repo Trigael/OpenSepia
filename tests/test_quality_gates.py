@@ -234,6 +234,10 @@ class TestApplyAgentOutputDoDGate:
             "- [ ] Error on bad password\n"
         )
         adapter, board = _make_adapter(tmp_path, old_sprint, backlog)
+        # Seed review evidence so review gate passes (we're testing DoD gate)
+        archive_dir = board / "archive" / "dev2"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / "review.md").write_text("STORY-001 code review: APPROVED\n")
 
         new_sprint = "## REVIEW\n\n## DONE\n- [x] STORY-001: Login (dev1)\n"
         files = [ParsedFile(path="board/sprint.md", content=new_sprint, action="overwrite")]
@@ -312,6 +316,12 @@ class TestApplyAgentOutputDoDGate:
             "- [ ] Not done yet\n"
         )
         adapter, board = _make_adapter(tmp_path, old_sprint, backlog)
+        # Seed review evidence for both stories so review gate passes
+        archive_dir = board / "archive" / "dev2"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / "review.md").write_text(
+            "STORY-001 APPROVED\nSTORY-002 APPROVED\n"
+        )
 
         new_sprint = (
             "## REVIEW\n\n"
