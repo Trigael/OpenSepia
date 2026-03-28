@@ -209,6 +209,11 @@ def cmd_run(argv: list[str]) -> None:
         log.error(str(e))
         sys.exit(1)
 
+    # Include any active spawned agents from the evolution registry
+    spawned = config.get_spawned_agent_ids()
+    if spawned:
+        agent_ids = agent_ids + [aid for aid in spawned if aid not in agent_ids]
+
     git_info = check_workspace_git(config)
     git_label = " + git" if git_info["initialized"] else " (no git)"
 

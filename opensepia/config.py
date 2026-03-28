@@ -358,6 +358,21 @@ class OrchestratorConfig:
                     params.update(agent_overrides)
         return params
 
+    def get_spawned_agent_ids(self) -> list[str]:
+        """List IDs of active spawned agents from the evolution registry."""
+        registry_path = self.board_dir / "evolution" / "registry.yaml"
+        if not registry_path.exists():
+            return []
+        try:
+            with open(registry_path, "r", encoding="utf-8") as f:
+                registry = yaml.safe_load(f) or {}
+            return [
+                aid for aid, defn in registry.get("agents", {}).items()
+                if defn.get("status") == "active"
+            ]
+        except (OSError, ValueError, yaml.YAMLError):
+            return []
+
     def get_mode_descriptions(self) -> dict[str, str]:
         modes = self.agents.get("modes", {})
         return {name: defn.get("description", "") for name, defn in modes.items()}
