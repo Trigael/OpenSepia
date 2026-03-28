@@ -426,7 +426,10 @@ class MarkdownBoardAdapter(BoardAdapter):
         blocked_stories: dict[str, list[str]] = {}
 
         for story_id in newly_done:
-            story_section = self._extract_story_from_backlog(story_id, backlog_text)
+            # Check sprint.md first (agents update criteria here), fall back to backlog
+            story_section = self._extract_story_from_backlog(story_id, new_sprint_text)
+            if not story_section.strip():
+                story_section = self._extract_story_from_backlog(story_id, backlog_text)
             passed, unchecked = check_definition_of_done(story_section)
             if not passed:
                 blocked_stories[story_id] = unchecked

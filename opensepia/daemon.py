@@ -263,7 +263,14 @@ class OrchestratorDaemon:
                 logger.info("=== Cycle %d starting (mode: %s) ===",
                             self._state.cycle_count + 1, self.mode)
 
-                result, errors = self._run_single_cycle()
+                try:
+                    result, errors = self._run_single_cycle()
+                except Exception as e:
+                    # A single bad cycle must never crash the daemon.
+                    # Log the error and continue to the next cycle.
+                    logger.exception("Cycle %d crashed: %s", self._state.cycle_count + 1, e)
+                    result = "crashed"
+                    errors = [str(e)]
 
                 cycle_elapsed = (datetime.now() - cycle_start).total_seconds()
                 logger.info("=== Cycle %d done (%s, %.0fs) — %s ===",
@@ -320,7 +327,9 @@ class OrchestratorDaemon:
                     self._interruptible_sleep(self.pause)
                     self._state.next_cycle_at = None
 
-        except (OSError, RuntimeError, OrchestratorError) as e:
+        except Exception as e:
+            # Catch ALL exceptions — the daemon must not crash on any single error.
+            # Log it and let the finally block clean up gracefully.
             logger.exception("Unexpected error in daemon loop: %s", e)
         finally:
             # Final reap before exiting
@@ -352,6 +361,10 @@ class OrchestratorDaemon:
             return "skipped", [str(e)]
 
         try:
+            # Set board dir for evolution prompt loading
+            import os as _os
+            _os.environ["OPENSEPIA_BOARD_DIR"] = str(config.board_dir)
+
             from opensepia.board_adapter import create_board_adapter
             board_adapter = create_board_adapter(
                 config.board_dir, config.workspace_dir, config.project_dir,
