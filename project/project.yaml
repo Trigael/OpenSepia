@@ -5,5 +5,5 @@ limits:
   pause_between_agents: 5
 project: {}
 sprint:
-  current_cycle: 0
-  current_sprint: 1
+  current_cycle: 1
+  current_sprint: 9

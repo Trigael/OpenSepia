@@ -535,7 +535,7 @@ path: board/standup.md
 action: append
 content:
 ## 🔴 QA Engineer
-- **Done**: Re-reviewed STORY-001, all tests pass
+- **Done**: Re-reviewed STORY-001, all tests pass — approved
 - **Doing**: Preparing test plan for STORY-003
 - **Blockers**: none
 ---

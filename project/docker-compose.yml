@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - app-data:/app/data
+    env_file:
+      - path: config/.env
+        required: false
+    environment:
+      - DATABASE_PATH=/app/data/agentboard.db
+      - SNAPSHOT_DIR=/app/data/snapshots
+      - AGENTBOARD_ENV=production
+      - RATE_LIMIT_READ=120
+      - RATE_LIMIT_WRITE=120
+      - MAX_RATE_LIMIT_CLIENTS=10000
+      - DASHBOARD_COOKIE_SECURE=true
+      - ROLLBACK_ELIGIBLE_CYCLES=5
+    restart: unless-stopped
+    mem_limit: 512m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app-data:

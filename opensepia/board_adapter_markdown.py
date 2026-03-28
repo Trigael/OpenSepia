@@ -19,6 +19,7 @@ from opensepia.board_adapter import BoardAdapter, AgentContext, STORY_BUG_ID_RE
 from opensepia.agents.parser import ParsedFile
 from opensepia.agents.workspace import get_workspace_tree
 from opensepia.blockers import extract_blockers, format_blockers_for_context, update_blocker_registry
+from opensepia.review_gate import check_review_evidence, get_reviewer_for_story
 from opensepia.config import MAX_STANDUP_CHARS, MAX_INBOX_CHARS
 
 logger = logging.getLogger(__name__)
@@ -209,6 +210,11 @@ class MarkdownBoardAdapter(BoardAdapter):
                 logger.warning("SECURITY: %s path traversal blocked: %s", agent_id, pf.path)
                 continue
 
+            # Review gate: check REVIEW→DONE transitions in sprint.md
+            if pf.path.rstrip("/").endswith("sprint.md"):
+                old_content = self._read(full_path)
+                pf = self._enforce_review_gate(pf, old_content, agent_id)
+
             if pf.action == "append":
                 existing = self._read(full_path)
                 full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -285,6 +291,108 @@ class MarkdownBoardAdapter(BoardAdapter):
         except (ImportError, OSError) as e:
             logger.warning("EVOLUTION: %s write error: %s", agent_id, e)
             return False
+    # ----- Review gate helpers -----
+
+    @staticmethod
+    def _parse_stories_by_section(content: str) -> dict[str, set[str]]:
+        """Parse sprint.md into {section_lower: {STORY-001, ...}}."""
+        result: dict[str, set[str]] = {}
+        current_section: str | None = None
+        for line in content.split("\n"):
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                current_section = stripped[3:].strip().lower()
+                result.setdefault(current_section, set())
+            elif current_section:
+                for sid in STORY_BUG_ID_RE.findall(line):
+                    result[current_section].add(sid.upper())
+        return result
+
+    @staticmethod
+    def _find_assignee(content: str, story_id: str) -> str:
+        """Extract the assignee from a sprint line like '- [ ] STORY-001: Title (dev1)'."""
+        for line in content.split("\n"):
+            if story_id.upper() in line.upper():
+                m = re.search(r"\((\w+)\)\s*$", line.strip())
+                if m:
+                    return m.group(1)
+        return "dev1"
+
+    def _enforce_review_gate(self, pf: ParsedFile, old_content: str, agent_id: str) -> ParsedFile:
+        """Block REVIEW→DONE transitions that lack review evidence."""
+        if not old_content.strip():
+            return pf
+
+        old_sections = self._parse_stories_by_section(old_content)
+        new_sections = self._parse_stories_by_section(pf.content)
+
+        old_review = old_sections.get("review", set())
+        new_done = new_sections.get("done", set())
+        old_done = old_sections.get("done", set())
+
+        # Stories that moved from REVIEW to DONE in this update
+        promoted = old_review & (new_done - old_done)
+        if not promoted:
+            return pf
+
+        blocked: list[str] = []
+        for story_id in promoted:
+            has_review, reason = check_review_evidence(story_id, self.board_dir)
+            if not has_review:
+                logger.warning(
+                    "REVIEW GATE: blocked %s REVIEW→DONE (%s), agent=%s",
+                    story_id, reason, agent_id,
+                )
+                blocked.append(story_id)
+
+                # Notify the appropriate reviewer
+                assignee = self._find_assignee(old_content, story_id)
+                reviewer = get_reviewer_for_story(story_id, assignee)
+                self.send_inbox_message(
+                    reviewer,
+                    "review-gate",
+                    f"Please review **{story_id}** (assigned to {assignee}). "
+                    f"It cannot move to DONE without peer review approval.",
+                )
+
+        if not blocked:
+            return pf
+
+        # Rewrite new content: move blocked stories back to REVIEW
+        patched = self._move_stories_to_section(pf.content, blocked, "REVIEW")
+        return ParsedFile(path=pf.path, content=patched, action=pf.action)
+
+    @staticmethod
+    def _move_stories_to_section(content: str, story_ids: list[str], target_section: str) -> str:
+        """Remove stories from their current section and place them in target_section."""
+        ids_upper = {s.upper() for s in story_ids}
+        lines = content.split("\n")
+        removed_lines: list[str] = []
+        result_lines: list[str] = []
+
+        for line in lines:
+            found = STORY_BUG_ID_RE.findall(line)
+            if found and any(s.upper() in ids_upper for s in found):
+                removed_lines.append(line)
+            else:
+                result_lines.append(line)
+
+        # Find target section and insert removed lines
+        output: list[str] = []
+        inserted = False
+        for line in result_lines:
+            output.append(line)
+            if not inserted and line.strip().lower() == f"## {target_section.lower()}":
+                for rl in removed_lines:
+                    output.append(rl)
+                inserted = True
+
+        # If target section not found, append it
+        if not inserted:
+            output.append(f"\n## {target_section}")
+            output.extend(removed_lines)
+
+        return "\n".join(output)
 
     # ----- Inbox -----
 
