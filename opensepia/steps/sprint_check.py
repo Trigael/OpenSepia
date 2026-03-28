@@ -57,15 +57,36 @@ class SprintCheckStep:
         from opensepia.agents.invoker import invoke_agent
         from opensepia.agents.parser import parse_files_section
         from opensepia.agents.writer import _handle_standup_fallback, _handle_provider_comments
+        from opensepia.retrospective import (
+            build_retro_context,
+            parse_retro_response,
+            write_retro_file,
+        )
 
         if ctx.board_adapter is None:
             return
         adapter = ctx.board_adapter
         standup_file = ctx.board_dir / "standup.md"
 
+        sprint_text = ""
+        try:
+            sprint_text = (ctx.board_dir / "sprint.md").read_text(encoding="utf-8")
+        except OSError:
+            pass
+
+        standup_text = ""
+        try:
+            standup_text = standup_file.read_text(encoding="utf-8")
+        except OSError:
+            pass
+
+        sprint_num = ctx.project_config.get("sprint", {}).get("current_sprint", 1)
+        retro_context = build_retro_context(sprint_num, sprint_text, standup_text)
+
         retro_agents = ctx.agents_config.get("global", {}).get(
             "retrospective_agents", ["po", "pm"],
         )
+        combined_response = ""
         for agent_id in retro_agents:
             try:
                 agent_cfg = ctx.agents_config["agents"].get(agent_id)
@@ -73,6 +94,7 @@ class SprintCheckStep:
                     continue
 
                 agent_ctx = adapter.get_agent_context(agent_id, ctx.agents_config, ctx.project_config)
+                agent_ctx["retro_context"] = retro_context
                 context = build_agent_context_from_adapter(
                     agent_id, ctx.agents_config, agent_ctx,
                 )
@@ -98,11 +120,21 @@ class SprintCheckStep:
                     _handle_standup_fallback(agent_id, result_dict, parsed, ctx.agents_config, standup_file)
                     _handle_provider_comments(agent_id, parsed)
                     adapter.archive_inbox(agent_id)
+                    combined_response += result.response + "\n"
                     logger.info("%s retrospective completed", agent_id)
                 else:
                     logger.warning("%s retrospective failed: %s", agent_id, result.error)
             except (subprocess.SubprocessError, OSError, RuntimeError, ValueError, KeyError) as e:
                 logger.warning("%s retrospective error: %s", agent_id, e)
+
+        # Write structured retro archive file from combined agent output
+        if combined_response.strip():
+            try:
+                retro_data = parse_retro_response(combined_response)
+                write_retro_file(ctx.board_dir, sprint_num, retro_data)
+                logger.info("Retrospective archive written for sprint %d", sprint_num)
+            except (OSError, ValueError) as e:
+                logger.warning("Failed to write retro file: %s", e)
 
     def _advance_sprint(self, ctx: PipelineContext) -> None:
         """Increment sprint number, reset cycle to 0."""
