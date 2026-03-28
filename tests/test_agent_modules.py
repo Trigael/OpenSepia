@@ -60,6 +60,7 @@ def _make_agent_context(**overrides):
         inbox="## Message from PO\nPlease fix bug",
         workspace_tree="src/\n  main.py",
         provider_comments="",
+        blockers_md="",
         sprint_num=1,
         cycle_num=3,
     )
