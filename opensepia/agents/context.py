@@ -64,10 +64,58 @@ def build_agent_context_from_adapter(
 
     ac = agent_context
 
+    # Use refined prompt if evolution is active
+    if ac.agent_memory or ac.relevant_skills or ac.lineage_context:
+        try:
+            from opensepia.evolution.prompts import PromptManager
+            # board_dir is project_dir / "board" — infer from context
+            # The adapter already loaded evolution data, so we know the path exists
+            import os
+            board_dir_env = os.environ.get("OPENSEPIA_BOARD_DIR", "")
+            if board_dir_env:
+                from pathlib import Path
+                pm = PromptManager(Path(board_dir_env))
+                refined = pm.get_active_prompt(agent_id)
+                if refined:
+                    system_prompt = refined
+        except (ImportError, OSError):
+            pass  # Evolution not available or no refined prompt
+
     # Cap sprint and backlog to prevent blowing agent token limits
     sprint_md = _strip_done_stories(ac.sprint_md) if ac.sprint_md else ""
     sprint_md = _cap_text(sprint_md, MAX_SPRINT_CHARS, "sprint_md")
     backlog_md = _cap_text(ac.backlog_md, MAX_BACKLOG_CHARS, "backlog_md") if ac.backlog_md else ""
+
+    # Build evolution sections
+    evolution_section = ""
+    if ac.agent_memory:
+        evolution_section += f"""
+## Your Memory (persistent learnings)
+{ac.agent_memory}
+"""
+    if ac.relevant_skills:
+        evolution_section += f"""
+## Available Skills
+{ac.relevant_skills}
+"""
+    if ac.lineage_context:
+        evolution_section += f"""
+## Your Lineage
+{ac.lineage_context}
+"""
+
+    # Evolution instructions (only if evolution is active)
+    evolution_instructions = ""
+    if ac.agent_memory or ac.relevant_skills or ac.lineage_context:
+        evolution_instructions = f"""
+## Self-Evolution (optional)
+You can record learnings and propose improvements:
+- `board/evolution/memory/{agent_id}.md` (action: append) — record what you learned this cycle
+- `board/evolution/skills/_project/{{name}}.md` — document a reusable skill/pattern
+- `board/evolution/proposals/pending/{{name}}.yaml` — propose prompt/agent changes
+
+Memory entry format: `- [S{{sprint}}C{{cycle}}] Category: What you learned`
+"""
 
     context = f"""{system_prompt}
 
@@ -91,7 +139,7 @@ Time: {now} | Sprint: {ac.sprint_num} | Cycle: {ac.cycle_num}
 ## Your Inbox ({agent_id})
 {ac.inbox if ac.inbox else "(no messages)"}
 {ac.provider_comments}
-
+{evolution_section}
 ## Workspace
 ```
 {ac.workspace_tree}
@@ -103,7 +151,7 @@ Time: {now} | Sprint: {ac.sprint_num} | Cycle: {ac.cycle_num}
 {agents_config.get("global", {}).get("standup_instruction", "")}
 
 {comm_rules}
-
+{evolution_instructions}
 Do your work. At the end you MUST return:
 
 ```

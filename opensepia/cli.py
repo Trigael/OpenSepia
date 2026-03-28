@@ -107,6 +107,7 @@ COMMANDS = {
     "message": cmd_message,
     "reset": cmd_reset,
     "config": cmd_config,
+    "evolve": None,  # Lazy import below
 }
 
 
@@ -120,6 +121,10 @@ def main() -> None:
     rest = sys.argv[2:]
 
     handler = COMMANDS.get(command)
+    if command == "evolve":
+        from opensepia.commands.evolve import cmd_evolve
+        cmd_evolve(rest)
+        return
     if handler:
         handler(rest)
         return
