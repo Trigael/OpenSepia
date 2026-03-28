@@ -144,6 +144,55 @@ class TestValidateAgentsSchema:
     def test_execution_none_is_fine(self):
         _validate_agents_schema(_minimal_agents())  # no execution section is OK
 
+    # --- evolution section ---
+
+    def test_evolution_not_a_dict(self):
+        agents = _minimal_agents()
+        agents["evolution"] = "bad"
+        with pytest.raises(ConfigError, match="'evolution' must be a mapping"):
+            _validate_agents_schema(agents)
+
+    def test_evolution_auto_approve_not_a_dict(self):
+        agents = _minimal_agents()
+        agents["evolution"] = {"auto_approve": "bad"}
+        with pytest.raises(ConfigError, match="evolution.auto_approve must be a mapping"):
+            _validate_agents_schema(agents)
+
+    def test_evolution_limits_not_a_dict(self):
+        agents = _minimal_agents()
+        agents["evolution"] = {"limits": "bad"}
+        with pytest.raises(ConfigError, match="evolution.limits must be a mapping"):
+            _validate_agents_schema(agents)
+
+    def test_evolution_limits_value_not_a_number(self):
+        agents = _minimal_agents()
+        agents["evolution"] = {"limits": {"max_agents": "twenty"}}
+        with pytest.raises(ConfigError, match="evolution.limits.max_agents must be a number"):
+            _validate_agents_schema(agents)
+
+    def test_evolution_valid_full(self):
+        agents = _minimal_agents()
+        agents["evolution"] = {
+            "enabled": False,
+            "auto_approve": {"memory": True, "prompts": False},
+            "limits": {"max_agents": 20, "max_prompt_length": 8000},
+        }
+        _validate_agents_schema(agents)  # should not raise
+
+    def test_evolution_none_is_fine(self):
+        # No evolution section is OK (backward compat)
+        _validate_agents_schema(_minimal_agents())
+
+    def test_evolution_empty_dict_is_fine(self):
+        agents = _minimal_agents()
+        agents["evolution"] = {}
+        _validate_agents_schema(agents)  # should not raise
+
+    def test_evolution_limits_float_value_is_fine(self):
+        agents = _minimal_agents()
+        agents["evolution"] = {"limits": {"max_agents": 20.5}}
+        _validate_agents_schema(agents)  # floats are valid numbers
+
 
 # ===========================================================================
 # 2. _validate_project_schema

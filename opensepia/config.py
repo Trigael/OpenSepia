@@ -83,6 +83,23 @@ def _validate_agents_schema(agents: dict) -> None:
     if pipeline is not None and not isinstance(pipeline, list):
         raise ConfigError("agents.yaml 'pipeline' must be a list of step names")
 
+    evolution = agents.get("evolution")
+    if evolution is not None:
+        if not isinstance(evolution, dict):
+            raise ConfigError("agents.yaml 'evolution' must be a mapping")
+        auto_approve = evolution.get("auto_approve")
+        if auto_approve is not None and not isinstance(auto_approve, dict):
+            raise ConfigError("agents.yaml: evolution.auto_approve must be a mapping")
+        limits = evolution.get("limits")
+        if limits is not None:
+            if not isinstance(limits, dict):
+                raise ConfigError("agents.yaml: evolution.limits must be a mapping")
+            for key, val in limits.items():
+                if not isinstance(val, (int, float)):
+                    raise ConfigError(
+                        f"agents.yaml: evolution.limits.{key} must be a number, got {type(val).__name__}"
+                    )
+
 
 def _validate_project_schema(project: dict) -> None:
     """Validate project.yaml structure at load time. Raises ConfigError on problems."""
