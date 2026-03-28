@@ -25,7 +25,7 @@
 
 ## BLOCKED
 
-## Security Analysis [Cycle 16]
+## Security Analysis [Cycle 13]
 
 ### Finding Status Summary
 
@@ -48,21 +48,24 @@
 | SEC-017 Cluster State Mutation | CLOSED (verified C8) | ~~LOW~~ |
 | SEC-018 Docker Resource Limits | CLOSED (fixed C10) | ~~LOW~~ |
 
-### Cycle 16 — Pentest Report (No New Code Changes)
+### Cycle 13 — Pentest Sweep (No New Code)
 
-No new source modifications since Cycle 14. Re-read all source and test files.
+No source modifications since cycle 10. Full re-audit of db.py, health.py, aws_ecs.py, validation.py confirms all remediations intact.
 
-**Pentest verification summary:**
+**Verified controls:**
+- **SQL injection**: All queries use parameterized statements (db.py) ✓
+- **Input validation**: Strict identifier regex, allowlisted environments/providers (validation.py) ✓
+- **SigV4 signing**: All ECS and CloudWatch requests signed (aws_ecs.py) ✓
+- **TLS enforcement**: `verify=True` on httpx client (aws_ecs.py:185) ✓
+- **Error leakage**: Debug details logged, not returned to caller (aws_ecs.py) ✓
+- **Credential handling**: Fail-closed on missing AWS creds (aws_ecs.py:76-80) ✓
+- **Public IP default**: `assign_public_ip` defaults to `False` (aws_ecs.py:43) ✓
 
-1. **SQL Injection** — db.py: all queries use `?` parameterized placeholders. `update_status()` builds SET clause from hardcoded `parts` list only. NOT injectable.
-2. **YAML Deserialization** — config.py: uses `yaml.safe_load`. Safe.
-3. **Path Traversal** — config.py `_validate_db_path`: rejects absolute paths, `..` components, resolved-outside-CWD. Solid.
-4. **Input Validation** — validation.py: regex allowlist `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$` on all CLI identifiers. Environments and providers checked against fixed sets.
-5. **AWS Auth** — aws_ecs.py: SigV4 on all ECS + CloudWatch requests. Credentials fail-closed.
-6. **Error Leakage** — Error messages expose HTTP status codes only; raw bodies at DEBUG level.
-7. **Container Security** — Non-root user (1000), read-only FS, 127.0.0.1 port bindings, resource limits, Redis password-protected.
-8. **TLS** — `verify=True` on httpx client. No cert bypass.
-9. **Secrets** — `.env` in `.gitignore`, `${ENV:VAR}` references in config.
+**Standing security approvals (unchanged):**
+- **STORY-010** (health.py): APPROVED
+- **STORY-009** (db.py): APPROVED
+- **STORY-012** (tests): APPROVED
+- **STORY-007** (aws_ecs.py): APPROVED
 
 **No new findings.**
 
