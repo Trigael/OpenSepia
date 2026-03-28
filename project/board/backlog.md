@@ -84,15 +84,15 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-009: Deployment state tracking with SQLite
 **Priority**: HIGH
 **Assigned**: dev2
-**Status**: TODO
+**Status**: DONE
 
 **As a** user **I want** deployment history tracked locally **so that** I can see what was deployed, when, and roll back if needed
 
 **Acceptance criteria**:
-- [ ] SQLite database at `~/.clouddeploy/state.db`
-- [ ] Track: deployment_id, timestamp, environment, image, status, commit_sha
-- [ ] `clouddeploy status` shows current deployment per environment
-- [ ] `clouddeploy logs` shows deployment history with Rich table output
+- [x] SQLite database at `~/.clouddeploy/state.db`
+- [x] Track: deployment_id, timestamp, environment, image, status, commit_sha
+- [x] `clouddeploy status` shows current deployment per environment
+- [x] `clouddeploy logs` shows deployment history with Rich table output
 
 ## MEDIUM
 
@@ -114,15 +114,15 @@ CloudDeploy makes deploying containerized apps to any cloud as simple as `cloudd
 ### STORY-010: Health check system
 **Priority**: MEDIUM
 **Assigned**: dev1
-**Status**: TODO
+**Status**: DONE
 
 **As a** user **I want** automatic health checks after deployment **so that** I know if my deployment succeeded
 
 **Acceptance criteria**:
-- [ ] Configurable health check endpoint (default: `/health`)
-- [ ] Polling with timeout and retry logic
-- [ ] Auto-rollback option on health check failure
-- [ ] Health status in deployment state DB
+- [x] Configurable health check endpoint (default: `/health`)
+- [x] Polling with timeout and retry logic
+- [x] Auto-rollback option on health check failure
+- [x] Health status in deployment state DB
 
 ### STORY-011: Rollback support
 **Priority**: MEDIUM

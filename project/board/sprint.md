@@ -8,6 +8,8 @@
 ## IN PROGRESS
 
 ## REVIEW
+- [x] STORY-010: Health check system (dev1)
+- [ ] STORY-009: Deployment state tracking with SQLite (dev2)
 - [ ] STORY-012: Basic unit test suite (tester)
 
 ## TESTING
@@ -23,7 +25,7 @@
 
 ## BLOCKED
 
-## Security Analysis [Cycle 12]
+## Security Analysis [Cycle 16]
 
 ### Finding Status Summary
 
@@ -44,85 +46,28 @@
 | SEC-015 CloudWatch Unsigned | CLOSED (fixed C7) | ~~HIGH~~ |
 | SEC-016 Public IP Default | CLOSED (verified C8) | ~~MEDIUM~~ |
 | SEC-017 Cluster State Mutation | CLOSED (verified C8) | ~~LOW~~ |
+| SEC-018 Docker Resource Limits | CLOSED (fixed C10) | ~~LOW~~ |
 
-### Cycle 12 — Maintenance Review
+### Cycle 16 — Pentest Report (No New Code Changes)
 
-No source code changes since Cycle 8. All workspace files confirmed unchanged. Security posture remains **GREEN**.
+No new source modifications since Cycle 14. Re-read all source and test files.
 
-**Existing controls verified intact:**
-- `yaml.safe_load` in config.py (no unsafe deserialization)
-- Parameterized SQL in db.py (all queries use `?` placeholders)
-- Input validation in validation.py (regex allowlist `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
-- Path traversal protection in config.py (`_validate_db_path`)
-- SigV4 signing on all AWS API calls via `_sign_and_merge_headers()`
-- Credentials fail-closed (`_get_aws_credentials` raises on missing keys)
-- Generic error messages to users; details at DEBUG only
-- `assign_public_ip` defaults `False`
-- Docker: non-root user, ports on 127.0.0.1, Redis password-protected
-- TLS verification enabled (`verify=True`)
+**Pentest verification summary:**
 
-### New Findings — Cycle 12
+1. **SQL Injection** — db.py: all queries use `?` parameterized placeholders. `update_status()` builds SET clause from hardcoded `parts` list only. NOT injectable.
+2. **YAML Deserialization** — config.py: uses `yaml.safe_load`. Safe.
+3. **Path Traversal** — config.py `_validate_db_path`: rejects absolute paths, `..` components, resolved-outside-CWD. Solid.
+4. **Input Validation** — validation.py: regex allowlist `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$` on all CLI identifiers. Environments and providers checked against fixed sets.
+5. **AWS Auth** — aws_ecs.py: SigV4 on all ECS + CloudWatch requests. Credentials fail-closed.
+6. **Error Leakage** — Error messages expose HTTP status codes only; raw bodies at DEBUG level.
+7. **Container Security** — Non-root user (1000), read-only FS, 127.0.0.1 port bindings, resource limits, Redis password-protected.
+8. **TLS** — `verify=True` on httpx client. No cert bypass.
+9. **Secrets** — `.env` in `.gitignore`, `${ENV:VAR}` references in config.
 
-(none)
-
-### Open Items
-
-**SEC-010 (No Auth — Deferred)**: Remains deferred. No web endpoints exist. Will become actionable when STORY-011 (web dashboard) enters development. Auth middleware, rate limiting, and CORS must be implemented before any HTTP listener goes live.
-
-### Sprint 2 Pre-Review — Threat Model Notes
-
-PM flagged STORY-009 and STORY-010 for proactive security review. Documenting anticipated attack surface for dev guidance:
-
-**STORY-009 (SQLite State Tracking)**: Existing `db.py` already uses parameterized queries — new code must maintain this pattern. Watch for: (1) any string-formatted SQL, (2) DB file permissions (should be 0600 or project-directory-scoped), (3) no user-controlled table/column names in dynamic queries, (4) VACUUM/integrity checks if DB is user-accessible.
-
-**STORY-010 (Rollback Support)**: Rollback logic must validate deployment IDs against DB before acting. Watch for: (1) TOCTOU between "check deployment exists" and "execute rollback", (2) rollback to attacker-controlled image tag, (3) missing authorization — any user who can deploy should not automatically be able to roll back prod. Recommend rollback target validation: only allow rollback to previously-successful deployment IDs from the DB.
-## Security Analysis [Cycle 10]
-
-### Finding Status Summary
-
-| Finding | Status | Severity |
-|---------|--------|----------|
-| SEC-001 Redis Exposed | CLOSED (fixed C3) | ~~HIGH~~ |
-| SEC-002 Secrets in Config | CLOSED (fixed C2) | ~~MEDIUM~~ |
-| SEC-003 Input Validation | CLOSED (fixed C2) | ~~HIGH~~ |
-| SEC-006 Port Exposure | CLOSED (fixed C3) | ~~MEDIUM~~ |
-| SEC-007 YAML Loading | CLOSED (safe) | ~~INFO~~ |
-| SEC-008 SQL Formatting | CLOSED (info) | ~~INFO~~ |
-| SEC-009 Healthcheck | CLOSED (fixed C4) | ~~LOW~~ |
-| SEC-010 No Auth (deferred) | OPEN (deferred) | MEDIUM |
-| SEC-011 Missing SigV4 (ECS) | CLOSED (fixed C6) | ~~HIGH~~ |
-| SEC-012 Error Leakage | CLOSED (fixed C4) | ~~MEDIUM~~ |
-| SEC-013 Hardcoded Cluster | CLOSED (fixed C6) | ~~LOW~~ |
-| SEC-014 TLS Config | CLOSED (fixed C4) | ~~LOW~~ |
-| SEC-015 CloudWatch Unsigned | CLOSED (fixed C7) | ~~HIGH~~ |
-| SEC-016 Public IP Default | CLOSED (verified C8) | ~~MEDIUM~~ |
-| SEC-017 Cluster State Mutation | CLOSED (verified C8) | ~~LOW~~ |
-
-### Cycle 10 — Maintenance Review
-
-No source code changes since Cycle 8. All workspace files confirmed unchanged. Security posture remains **GREEN**.
-
-**Existing controls verified intact:**
-- `yaml.safe_load` in config.py (no unsafe deserialization)
-- Parameterized SQL in db.py (all queries use `?` placeholders)
-- Input validation in validation.py (regex allowlist `^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$`)
-- Path traversal protection in config.py (`_validate_db_path`)
-- SigV4 signing on all AWS API calls via `_sign_and_merge_headers()`
-- Credentials fail-closed (`_get_aws_credentials` raises on missing keys)
-- Generic error messages to users; details at DEBUG only
-- `assign_public_ip` defaults `False`
-- Docker: non-root user, ports on 127.0.0.1, Redis password-protected
-- TLS verification enabled (`verify=True`)
-
-### New Findings — Cycle 10
-
-(none)
+**No new findings.**
 
 ### Open Items
 
-**SEC-010 (No Auth — Deferred)**: Remains deferred. No web endpoints exist. Will become actionable when STORY-011 (web dashboard) enters development. Auth middleware, rate limiting, and CORS must be implemented before any HTTP listener goes live.
+**SEC-010 (No Auth — Deferred)**: No web endpoints exist yet. Will become actionable when STORY-011 (web dashboard) enters development. Auth middleware, rate limiting, and CORS must be implemented before any HTTP listener goes live.
 
-### Pending Reviews
-
-- **STORY-007 (AWS ECS provider)**: In TESTING — will perform targeted pentest once verified by QA.
-- **STORY-012 (Unit test suite)**: In REVIEW — will review test coverage for security-relevant paths.
+### Security Posture: GREEN ✓
