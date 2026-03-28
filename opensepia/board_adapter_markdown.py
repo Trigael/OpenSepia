@@ -18,6 +18,7 @@ from opensepia.cycle_state import _file_lock
 from opensepia.board_adapter import BoardAdapter, AgentContext, STORY_BUG_ID_RE
 from opensepia.agents.parser import ParsedFile
 from opensepia.agents.workspace import get_workspace_tree
+from opensepia.blockers import extract_blockers, format_blockers_for_context, update_blocker_registry
 from opensepia.config import MAX_STANDUP_CHARS, MAX_INBOX_CHARS
 
 logger = logging.getLogger(__name__)
@@ -87,10 +88,17 @@ class MarkdownBoardAdapter(BoardAdapter):
         # Workspace tree
         workspace_tree = get_workspace_tree(self.workspace_dir)
 
+        # Blockers
+        cycle_num = sprint_cfg.get("current_cycle", 0)
+        blockers = extract_blockers(sprint_md)
+        update_blocker_registry(self.board_dir, blockers, cycle_num)
+        blockers_context = format_blockers_for_context(blockers, cycle_num)
+
         # Provider comments (optional)
         provider_comments = self._fetch_provider_comments()
 
         return AgentContext(
+            blockers_md=blockers_context,
             project_description=project_md,
             sprint_md=sprint_md,
             backlog_md=backlog_md,
